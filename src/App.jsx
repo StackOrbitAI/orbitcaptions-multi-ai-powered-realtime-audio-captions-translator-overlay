@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 
-// Hardcoded Deepgram API Key provided by the user
-const DEEPGRAM_API_KEY = '379843eb33b0d607259b4b0c08b951de36e77afe';
+// Gemini Live Translate Model
+const GEMINI_MODEL = 'gemini-3.5-live-translate-preview';
 
 // Demo mode dialogues (English & Hindi)
 const DEMO_DIALOGUES = [
@@ -11,7 +11,7 @@ const DEMO_DIALOGUES = [
   { en: "You can drag it anywhere on the screen using the top handle.", hi: "आप शीर्ष हैंडल का उपयोग करके इसे स्क्रीन पर कहीं भी खींच सकते हैं।" },
   { en: "The background transparency and text size can be customized in real-time.", hi: "पृष्ठभूमि की पारदर्शिता और टेक्स्ट के आकार को वास्तविक समय में अनुकूलित किया जा सकता है।" },
   { en: "Try speaking now or let this demo show you how it works!", hi: "अभी बोलने का प्रयास करें या इस डेमो को देखने दें कि यह कैसे काम करता है!" },
-  { en: "We are translating English speech to Hindi instantly using Google translation API.", hi: "हम गूगल अनुवाद एपीआई का उपयोग करके अंग्रेजी भाषण का तुरंत हिंदी में अनुवाद कर रहे हैं।" },
+  { en: "Powered by Google Gemini Live Translate — the most accurate real-time translation.", hi: "गूगल जेमिनी लाइव ट्रांसलेट द्वारा संचालित — सबसे सटीक रीयल-टाइम अनुवाद।" },
   { en: "This is a game-changer for multilingual remote meetings.", hi: "यह बहुभाषी रिमोट बैठकों के लिए एक गेम-चेंजर है।" },
 ];
 
@@ -23,22 +23,22 @@ function App() {
   const [lastEnglishText, setLastEnglishText] = useState('');
   const [lastHindiText, setLastHindiText] = useState('');
   const [error, setError] = useState('');
-  
+
   // Customization States
-  const [fontSize, setFontSize] = useState('medium'); // small, medium, large, xl
-  const [opacity, setOpacity] = useState(80); // percentage (10-100)
-  const [audioSource, setAudioSource] = useState('system'); // 'system' (speaker/Zoom output) or 'mic' (microphone)
-  const [transcriptHistory, setTranscriptHistory] = useState([]); // holds [{ time, en, hi }]
-  
+  const [fontSize, setFontSize] = useState('medium');
+  const [opacity, setOpacity] = useState(80);
+  const [audioSource, setAudioSource] = useState('system');
+  const [transcriptHistory, setTranscriptHistory] = useState([]);
+
   // API and Settings States
   const [apiKey, setApiKey] = useState(() => {
-    return localStorage.getItem('deepgram_api_key') || DEEPGRAM_API_KEY;
+    return localStorage.getItem('gemini_api_key') || '';
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [tempApiKey, setTempApiKey] = useState(apiKey);
-  const [activeTab, setActiveTab] = useState('config'); // 'config' or 'logs'
+  const [activeTab, setActiveTab] = useState('config');
   const [logsCopied, setLogsCopied] = useState(false);
-  
+
   // Refs for managing streaming resources
   const socketRef = useRef(null);
   const audioContextRef = useRef(null);
@@ -46,271 +46,137 @@ function App() {
   const streamRef = useRef(null);
   const demoIntervalRef = useRef(null);
   const demoIndexRef = useRef(0);
-  
-  // Refs for managing transcription-to-translation queue and timers
-  const lastTranslatedTextRef = useRef('');
-  const isTranslatingRef = useRef(false);
-  const pendingTranslationRef = useRef(null); // holds { text: string, isFinal: boolean }
-  const lastTranslationTimeRef = useRef(0);
-  const translationTimeoutRef = useRef(null);
 
-  // Translation function using free Google Translate API - supports full paragraphs
-  const translateText = async (text) => {
-    if (!text.trim()) return '';
-    try {
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=hi&dt=t&q=${encodeURIComponent(text)}`;
-      const response = await fetch(url);
-      const data = await response.json();
-      if (data && data[0]) {
-        // Map over all translated parts and join them to prevent truncated text
-        return data[0]
-          .map(item => item && item[0])
-          .filter(Boolean)
-          .join('');
-      }
-    } catch (err) {
-      console.error("Translation error:", err);
-    }
-    return '';
-  };
-
-  // Perform translation run and process pending queue when done
-  const performTranslation = async (text, isFinal) => {
-    if (!text.trim()) return;
-    isTranslatingRef.current = true;
-    try {
-      const translated = await translateText(text);
-      if (translated) {
-        if (isFinal) {
-          // Push finalized translation to the top rolling display
-          setLastEnglishText(text);
-          setLastHindiText(translated);
-          // Clear active display for new words
-          setEnglishText('');
-          setHindiText('');
-
-          const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-          setTranscriptHistory(prev => {
-            const exists = prev.some(item => item.en === text && item.time === timestamp);
-            if (exists) return prev;
-            return [...prev, { time: timestamp, en: text, hi: translated }];
-          });
-        } else {
-          // Update the active real-time display
-          setEnglishText(text);
-          setHindiText(translated);
-        }
-        lastTranslatedTextRef.current = text;
-      }
-    } catch (e) {
-      console.error("Translation run error:", e);
-    } finally {
-      isTranslatingRef.current = false;
-      lastTranslationTimeRef.current = Date.now();
-
-      // Immediately process next item if a newer text arrived during translation
-      if (pendingTranslationRef.current) {
-        const { text: nextText, isFinal: nextIsFinal } = pendingTranslationRef.current;
-        if (nextText !== lastTranslatedTextRef.current || nextIsFinal) {
-          pendingTranslationRef.current = null;
-          performTranslation(nextText, nextIsFinal);
-        } else {
-          pendingTranslationRef.current = null;
-        }
-      }
-    }
-  };
-
-  // Schedule interim translations using a low-latency 200ms throttle/debounce mechanism
-  const scheduleInterimTranslation = (text) => {
-    if (isTranslatingRef.current) {
-      pendingTranslationRef.current = { text, isFinal: false };
-      return;
-    }
-    
-    const now = Date.now();
-    const timeSinceLast = now - lastTranslationTimeRef.current;
-    const minInterval = 200; // Fast 200ms translation interval
-    
-    if (timeSinceLast >= minInterval) {
-      if (translationTimeoutRef.current) {
-        clearTimeout(translationTimeoutRef.current);
-        translationTimeoutRef.current = null;
-      }
-      lastTranslationTimeRef.current = now;
-      performTranslation(text, false);
-    } else {
-      if (translationTimeoutRef.current) {
-        pendingTranslationRef.current = { text, isFinal: false };
-        return;
-      }
-      
-      pendingTranslationRef.current = { text, isFinal: false };
-      const delay = minInterval - timeSinceLast;
-      translationTimeoutRef.current = setTimeout(() => {
-        translationTimeoutRef.current = null;
-        if (pendingTranslationRef.current) {
-          const { text: nextText, isFinal: nextIsFinal } = pendingTranslationRef.current;
-          pendingTranslationRef.current = null;
-          performTranslation(nextText, nextIsFinal);
-        }
-      }, delay);
-    }
-  };
-
-  // Central text update controller (routes to final vs interim flows)
-  const handleTextUpdate = (text, isFinal) => {
-    setEnglishText(text);
-    
-    if (isFinal) {
-      if (translationTimeoutRef.current) {
-        clearTimeout(translationTimeoutRef.current);
-        translationTimeoutRef.current = null;
-      }
-      
-      if (isTranslatingRef.current) {
-        pendingTranslationRef.current = { text, isFinal: true };
-      } else {
-        performTranslation(text, true);
-      }
-    } else {
-      scheduleInterimTranslation(text);
-    }
-  };
+  // Refs for rolling display
+  const currentEnRef = useRef('');
+  const currentHiRef = useRef('');
 
   // Cleanup all active resources
   const cleanupResources = () => {
-    // 1. Disconnect AudioContext processor nodes
     if (processorRef.current) {
-      try {
-        processorRef.current.disconnect();
-      } catch (e) {
-        console.error("Error disconnecting processor:", e);
-      }
+      try { processorRef.current.disconnect(); } catch (e) { /* ignore */ }
       processorRef.current = null;
     }
-
-    // 2. Close AudioContext
     if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
-      try {
-        audioContextRef.current.close();
-      } catch (e) {
-        console.error("Error closing AudioContext:", e);
-      }
+      try { audioContextRef.current.close(); } catch (e) { /* ignore */ }
     }
     audioContextRef.current = null;
-
-    // 3. Stop microphone/desktop capture tracks
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
-
-    // 4. Close Deepgram WebSocket
     if (socketRef.current) {
-      try {
-        socketRef.current.close();
-      } catch (e) {
-        console.error("Error closing socket:", e);
-      }
+      try { socketRef.current.close(); } catch (e) { /* ignore */ }
       socketRef.current = null;
     }
-
-    // 5. Stop Demo Interval
     if (demoIntervalRef.current) {
       clearInterval(demoIntervalRef.current);
       demoIntervalRef.current = null;
     }
-
-    // 6. Clean up translation queue timers
-    if (translationTimeoutRef.current) {
-      clearTimeout(translationTimeoutRef.current);
-      translationTimeoutRef.current = null;
-    }
-    pendingTranslationRef.current = null;
-    isTranslatingRef.current = false;
-    lastTranslatedTextRef.current = '';
-    setLastEnglishText('');
-    setLastHindiText('');
   };
 
-  // Deepgram Live Speech-to-Text WebSocket Stream Setup
-  const startDeepgramStream = async () => {
+  // Finalize current sentence into the rolling display
+  const finalizeCurrentSentence = () => {
+    const en = currentEnRef.current.trim();
+    const hi = currentHiRef.current.trim();
+    if (en || hi) {
+      setLastEnglishText(en);
+      setLastHindiText(hi);
+      setEnglishText('');
+      setHindiText('');
+      currentEnRef.current = '';
+      currentHiRef.current = '';
+
+      if (en && hi) {
+        const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        setTranscriptHistory(prev => [...prev, { time: timestamp, en, hi }]);
+      }
+    }
+  };
+
+  // Start Gemini Live Translate stream
+  const startGeminiStream = async () => {
     cleanupResources();
     setEnglishText('');
     setHindiText('');
     setLastEnglishText('');
     setLastHindiText('');
     setError('');
-    setTranscriptHistory([]); // Reset history when starting fresh
+    setTranscriptHistory([]);
+    currentEnRef.current = '';
+    currentHiRef.current = '';
+
+    const key = apiKey.trim();
+    if (!key) {
+      setError('Gemini API key missing. Open ⚙️ Settings and enter your key.');
+      return;
+    }
 
     try {
+      // 1. Capture audio stream
       let stream;
-
-      // 1. Capture system audio (speakers/Zoom output) or physical microphone
       if (audioSource === 'system') {
-        if (!window.electronAPI || !window.electronAPI.getDesktopSourceId) {
-          throw new Error("Desktop audio capture is only supported inside the desktop application.");
+        if (!window.electronAPI?.getDesktopSourceId) {
+          throw new Error('Desktop audio capture is only supported inside the Electron app.');
         }
-
         const sourceId = await window.electronAPI.getDesktopSourceId();
-        if (!sourceId) {
-          throw new Error("Could not find system audio device.");
-        }
+        if (!sourceId) throw new Error('Could not find system audio source.');
 
-        // Constraints for capturing desktop system audio in Electron
-        // Disables browser filters (echo cancellation/noise suppression) inside mandatory to prevent constraint errors
-        const constraints = {
+        stream = await navigator.mediaDevices.getUserMedia({
           audio: {
             mandatory: {
               chromeMediaSource: 'desktop',
               chromeMediaSourceId: sourceId,
               echoCancellation: false,
               noiseSuppression: false,
-              autoGainControl: false
+              autoGainControl: false,
             }
           },
           video: {
             mandatory: {
               chromeMediaSource: 'desktop',
-              chromeMediaSourceId: sourceId
+              chromeMediaSourceId: sourceId,
             }
           }
-        };
-
-        // Capture display audio stream
-        // NOTE: Do NOT stop video tracks — stopping them on a desktop capture stream
-        // also kills the audio track, making the entire stream silent.
-        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        });
       } else {
-        // Capture physical microphone
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
 
       streamRef.current = stream;
 
-      // 2. Create AudioContext to capture raw PCM audio (much higher accuracy than MediaRecorder/webm)
-      const audioContext = new AudioContext({ sampleRate: 48000 });
+      // 2. Create AudioContext at 16kHz (Gemini Live requires 16kHz PCM16 mono)
+      const audioContext = new AudioContext({ sampleRate: 16000 });
       audioContextRef.current = audioContext;
       const source = audioContext.createMediaStreamSource(stream);
-
-      // ScriptProcessorNode captures raw Float32 PCM samples which we convert to Int16 for Deepgram
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
 
-      // 3. Connect to Deepgram's streaming API via WebSocket
-      // encoding=linear16 tells Deepgram we are sending raw PCM Int16 audio
-      // endpointing=800 prevents sentence cutoff during fast speech (was 300ms, too aggressive)
-      // punctuate=true adds proper punctuation for cleaner output
-      const wsUrl = `wss://api.deepgram.com/v1/listen?model=nova-2&language=en&encoding=linear16&sample_rate=${audioContext.sampleRate}&channels=1&smart_format=true&punctuate=true&interim_results=true&endpointing=800`;
-      const socket = new WebSocket(wsUrl, ['token', apiKey]);
+      // 3. Open Gemini Live Translate WebSocket
+      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${key}`;
+      const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
 
       socket.onopen = () => {
-        console.log(`Connected to Deepgram (PCM ${audioContext.sampleRate}Hz) using ${audioSource === 'system' ? 'System Audio' : 'Microphone'}.`);
-        setIsListening(true);
+        console.log('Gemini Live Translate WebSocket connected.');
 
-        // 4. Stream raw PCM Int16 audio directly to Deepgram via WebSocket
+        // 4. Send setup message to configure the session
+        const setupMsg = {
+          setup: {
+            model: `models/${GEMINI_MODEL}`,
+            generation_config: {
+              response_modalities: ['TEXT'],
+            },
+            system_instruction: {
+              parts: [{
+                text: 'You are a real-time English to Hindi translator. The user will send audio. Transcribe what they say in English, then translate it to Hindi. Always respond in this exact JSON format: {"en": "<english transcript>", "hi": "<hindi translation>"}. Keep translations natural and conversational. Do not add any extra text outside the JSON.'
+              }]
+            }
+          }
+        };
+        socket.send(JSON.stringify(setupMsg));
+
+        // 5. Stream raw PCM16 audio chunks to Gemini
         processor.onaudioprocess = (e) => {
           if (socket.readyState === WebSocket.OPEN) {
             const float32 = e.inputBuffer.getChannelData(0);
@@ -319,109 +185,151 @@ function App() {
               const s = Math.max(-1, Math.min(1, float32[i]));
               int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
-            socket.send(int16.buffer);
+            // Convert Int16Array to base64
+            const bytes = new Uint8Array(int16.buffer);
+            let binary = '';
+            bytes.forEach(b => binary += String.fromCharCode(b));
+            const base64 = btoa(binary);
+
+            const audioMsg = {
+              realtime_input: {
+                media_chunks: [{
+                  mime_type: 'audio/pcm;rate=16000',
+                  data: base64
+                }]
+              }
+            };
+            socket.send(JSON.stringify(audioMsg));
           }
         };
 
-        // Connect source → processor only (NOT to destination — avoids audio feedback loop)
-        source.connect(processor);
-        // processor must be connected to destination to fire onaudioprocess, but use a silent gain node
+        // Silent gain node — required to fire onaudioprocess without audio feedback
         const silentGain = audioContext.createGain();
         silentGain.gain.value = 0;
+        source.connect(processor);
         processor.connect(silentGain);
         silentGain.connect(audioContext.destination);
+
+        setIsListening(true);
       };
 
+      // 6. Handle incoming Gemini responses
+      let textBuffer = '';
       socket.onmessage = (event) => {
         try {
-          const response = JSON.parse(event.data);
-          const transcript = response.channel?.alternatives[0]?.transcript || '';
-          const isFinal = response.is_final;
-          
-          if (transcript.trim()) {
-            handleTextUpdate(transcript, isFinal);
+          const msg = JSON.parse(event.data);
+
+          // Extract text parts from server response
+          const parts = msg?.serverContent?.modelTurn?.parts || [];
+          for (const part of parts) {
+            if (part.text) {
+              textBuffer += part.text;
+            }
+          }
+
+          const isTurnComplete = msg?.serverContent?.turnComplete === true;
+
+          // Try to parse JSON from the buffer
+          const jsonMatch = textBuffer.match(/\{[\s\S]*?"en"[\s\S]*?"hi"[\s\S]*?\}/);
+          if (jsonMatch) {
+            try {
+              const parsed = JSON.parse(jsonMatch[0]);
+              const en = (parsed.en || '').trim();
+              const hi = (parsed.hi || '').trim();
+
+              if (en) {
+                currentEnRef.current = en;
+                setEnglishText(en);
+              }
+              if (hi) {
+                currentHiRef.current = hi;
+                setHindiText(hi);
+              }
+
+              if (isTurnComplete) {
+                textBuffer = '';
+                finalizeCurrentSentence();
+              }
+            } catch (_) {
+              // Partial JSON — wait for more
+            }
+          }
+
+          if (isTurnComplete && !jsonMatch) {
+            textBuffer = '';
           }
         } catch (e) {
-          console.error("Failed to parse Deepgram message:", e);
+          console.error('Failed to parse Gemini message:', e);
         }
       };
 
       socket.onerror = (err) => {
-        console.error("Deepgram WebSocket error:", err);
-        setError("Deepgram connection error. Verify your API key and connection.");
+        console.error('Gemini WebSocket error:', err);
+        setError('Gemini connection error. Check your API key in ⚙️ Settings.');
         setIsListening(false);
         cleanupResources();
       };
 
-      socket.onclose = () => {
-        console.log("Deepgram connection closed.");
+      socket.onclose = (ev) => {
+        console.log('Gemini WebSocket closed:', ev.code, ev.reason);
         setIsListening(false);
       };
 
     } catch (err) {
-      console.error("Failed to start Deepgram stream:", err);
-      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setError(audioSource === 'system' 
-          ? "Screen recording permission denied. Please allow screen/audio share in OS settings."
-          : "Microphone permission denied. Please check your system settings."
-        );
+      console.error('Failed to start Gemini stream:', err);
+      if (err.name === 'NotAllowedError') {
+        setError(audioSource === 'system'
+          ? 'Screen recording permission denied.'
+          : 'Microphone permission denied.');
       } else {
-        setError(err.message || "Failed to initialize audio capture. Try Demo Mode.");
+        setError(err.message || 'Failed to start audio capture.');
       }
       setIsListening(false);
       cleanupResources();
     }
   };
 
-  const stopDeepgramStream = () => {
+  const stopStream = () => {
     setIsListening(false);
+    finalizeCurrentSentence();
     cleanupResources();
   };
 
   const toggleListening = () => {
     if (isDemoMode) setIsDemoMode(false);
-
-    if (isListening) {
-      stopDeepgramStream();
-    } else {
-      startDeepgramStream();
-    }
+    if (isListening) stopStream();
+    else startGeminiStream();
   };
 
-  // Demo Mode Loop
+  // Demo Mode
   useEffect(() => {
     if (isDemoMode) {
-      if (isListening) {
-        stopDeepgramStream();
-      }
-
+      if (isListening) stopStream();
       demoIndexRef.current = 0;
+
       const runDemoStep = () => {
         const currentIndex = demoIndexRef.current;
-        const currentDialogue = DEMO_DIALOGUES[currentIndex];
-        
-        // Rolling display simulation: show the previous dialogue on top dimmed
+        const cur = DEMO_DIALOGUES[currentIndex];
         const prevIndex = (currentIndex - 1 + DEMO_DIALOGUES.length) % DEMO_DIALOGUES.length;
-        if (currentIndex !== 0 || demoIndexRef.current > 0) {
-          const prevDialogue = DEMO_DIALOGUES[prevIndex];
-          setLastEnglishText(prevDialogue.en);
-          setLastHindiText(prevDialogue.hi);
+
+        if (currentIndex > 0) {
+          const prev = DEMO_DIALOGUES[prevIndex];
+          setLastEnglishText(prev.en);
+          setLastHindiText(prev.hi);
         } else {
           setLastEnglishText('');
           setLastHindiText('');
         }
 
-        setEnglishText(currentDialogue.en);
-        setHindiText(currentDialogue.hi);
+        setEnglishText(cur.en);
+        setHindiText(cur.hi);
 
-        // Push demo dialogues to history for testing download button
         const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        setTranscriptHistory(prev => [...prev, { time: timestamp, en: currentDialogue.en, hi: currentDialogue.hi }]);
-
-        demoIndexRef.current = (demoIndexRef.current + 1) % DEMO_DIALOGUES.length;
+        setTranscriptHistory(prev => [...prev, { time: timestamp, en: cur.en, hi: cur.hi }]);
+        demoIndexRef.current = (currentIndex + 1) % DEMO_DIALOGUES.length;
       };
 
-      runDemoStep(); // run immediately
+      runDemoStep();
       demoIntervalRef.current = setInterval(runDemoStep, 4500);
     } else {
       if (demoIntervalRef.current) {
@@ -432,219 +340,141 @@ function App() {
         setLastHindiText('');
       }
     }
-
-    return () => {
-      if (demoIntervalRef.current) clearInterval(demoIntervalRef.current);
-    };
+    return () => { if (demoIntervalRef.current) clearInterval(demoIntervalRef.current); };
   }, [isDemoMode]);
 
-  // Clean up on component unmount
-  useEffect(() => {
-    return () => {
-      cleanupResources();
-    };
-  }, []);
+  useEffect(() => { return () => cleanupResources(); }, []);
 
   const toggleDemoMode = () => {
-    if (isListening) {
-      stopDeepgramStream();
-    }
+    if (isListening) stopStream();
     setError('');
-    setTranscriptHistory([]); // Reset history when toggling demo mode
+    setTranscriptHistory([]);
     setIsDemoMode(!isDemoMode);
   };
 
-  // Get JSON log text containing session debugging data
-  const getLogText = () => {
-    const logData = {
-      timestamp: new Date().toISOString(),
-      error: error || 'None',
-      isListening,
-      isDemoMode,
-      audioSource,
-      apiKeyConfigured: apiKey ? `${apiKey.substring(0, 5)}...${apiKey.substring(apiKey.length - 5)}` : 'None',
-      userAgent: navigator.userAgent,
-      activeEnglish: englishText || 'None',
-      activeHindi: hindiText || 'None',
-      lastEnglishText: lastEnglishText || 'None',
-      lastHindiText: lastHindiText || 'None',
-      historyCount: transcriptHistory.length,
-      history: transcriptHistory.map(item => `[${item.time}] EN: "${item.en}" | HI: "${item.hi}"`).join('\n')
-    };
-    return JSON.stringify(logData, null, 2);
-  };
-
+  // Download transcript
   const downloadTranscript = async () => {
     if (transcriptHistory.length === 0) {
-      setError("No transcript history captured yet. Speak or activate Demo mode first.");
-      setTimeout(() => setError(""), 5000);
+      setError('No transcript yet. Start listening or use Demo mode.');
+      setTimeout(() => setError(''), 4000);
       return;
     }
-    
-    // Generate formatted text content
-    const content = transcriptHistory.map(item => 
+    const content = transcriptHistory.map(item =>
       `[${item.time}]\nEnglish: "${item.en}"\nHindi:   "${item.hi}"\n`
     ).join('\n');
-    
     const dateStr = new Date().toISOString().slice(0, 10);
     const filename = `OrbitCaptions_Transcript_${dateStr}.txt`;
 
-    if (window.electronAPI && window.electronAPI.saveFile) {
+    if (window.electronAPI?.saveFile) {
       const result = await window.electronAPI.saveFile(content, filename);
-      if (result && result.error) {
-        setError(`Failed to save transcript: ${result.error}`);
-        setTimeout(() => setError(""), 5000);
+      if (result?.error) {
+        setError(`Save failed: ${result.error}`);
+        setTimeout(() => setError(''), 4000);
       }
     } else {
-      // Fallback for browser testing
       const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      link.href = url; link.download = filename;
+      document.body.appendChild(link); link.click();
+      document.body.removeChild(link); URL.revokeObjectURL(url);
     }
   };
 
+  // Get log text
+  const getLogText = () => {
+    return JSON.stringify({
+      timestamp: new Date().toISOString(),
+      error: error || 'None',
+      isListening, isDemoMode, audioSource,
+      apiKeyConfigured: apiKey ? `${apiKey.substring(0, 8)}...` : 'None',
+      userAgent: navigator.userAgent,
+      activeEnglish: englishText || 'None',
+      activeHindi: hindiText || 'None',
+      historyCount: transcriptHistory.length,
+      history: transcriptHistory.map(i => `[${i.time}] EN: "${i.en}" | HI: "${i.hi}"`).join('\n')
+    }, null, 2);
+  };
+
+  // Copy logs
   const copyLogs = async () => {
-    const logText = getLogText();
-    
-    if (window.electronAPI && window.electronAPI.copyToClipboard) {
-      const result = await window.electronAPI.copyToClipboard(logText);
-      if (result && result.success) {
-        setLogsCopied(true);
-        setTimeout(() => setLogsCopied(false), 2000);
-      } else {
-        console.error("Native copy failed:", result?.error);
-      }
+    const text = getLogText();
+    if (window.electronAPI?.copyToClipboard) {
+      const result = await window.electronAPI.copyToClipboard(text);
+      if (result?.success) { setLogsCopied(true); setTimeout(() => setLogsCopied(false), 2000); }
     } else {
-      // Fallback
-      navigator.clipboard.writeText(logText).then(() => {
-        setLogsCopied(true);
-        setTimeout(() => setLogsCopied(false), 2000);
-      }).catch(err => {
-        console.error("Failed to copy logs:", err);
-      });
+      navigator.clipboard.writeText(text).then(() => {
+        setLogsCopied(true); setTimeout(() => setLogsCopied(false), 2000);
+      }).catch(console.error);
     }
   };
 
   const closeApp = () => {
     cleanupResources();
-    if (window.electronAPI) {
-      window.electronAPI.closeApp();
-    } else {
-      window.close();
-    }
+    if (window.electronAPI) window.electronAPI.closeApp();
+    else window.close();
   };
 
-  // Font Size Classes Mapping for Active and Finalized rolling layouts
+  // Font size classes
   const getFontSizeClasses = () => {
     switch (fontSize) {
-      case 'small':
-        return {
-          activeEn: 'text-[11px] text-indigo-200 font-medium',
-          activeHi: 'text-[15px] font-bold text-yellow-400',
-          finalEn: 'text-[10px] text-slate-400 font-light',
-          finalHi: 'text-[13px] font-semibold text-slate-300'
-        };
-      case 'large':
-        return {
-          activeEn: 'text-[14px] text-indigo-200 font-medium',
-          activeHi: 'text-[28px] font-extrabold text-yellow-400',
-          finalEn: 'text-[12px] text-slate-400 font-light',
-          finalHi: 'text-[20px] font-semibold text-slate-300'
-        };
-      case 'xl':
-        return {
-          activeEn: 'text-[16px] text-indigo-200 font-medium',
-          activeHi: 'text-[36px] font-black text-yellow-400',
-          finalEn: 'text-[14px] text-slate-400 font-light',
-          finalHi: 'text-[26px] font-semibold text-slate-300'
-        };
-      case 'medium':
-      default:
-        return {
-          activeEn: 'text-[12px] text-indigo-200 font-medium',
-          activeHi: 'text-[22px] font-extrabold text-yellow-400',
-          finalEn: 'text-[11px] text-slate-400 font-light',
-          finalHi: 'text-[16px] font-semibold text-slate-300'
-        };
+      case 'small':  return { activeEn: 'text-[11px] text-indigo-200 font-medium', activeHi: 'text-[15px] font-bold text-yellow-400', finalEn: 'text-[10px] text-slate-400 font-light', finalHi: 'text-[13px] font-semibold text-slate-300' };
+      case 'large':  return { activeEn: 'text-[14px] text-indigo-200 font-medium', activeHi: 'text-[28px] font-extrabold text-yellow-400', finalEn: 'text-[12px] text-slate-400 font-light', finalHi: 'text-[20px] font-semibold text-slate-300' };
+      case 'xl':     return { activeEn: 'text-[16px] text-indigo-200 font-medium', activeHi: 'text-[36px] font-black text-yellow-400', finalEn: 'text-[14px] text-slate-400 font-light', finalHi: 'text-[26px] font-semibold text-slate-300' };
+      default:       return { activeEn: 'text-[12px] text-indigo-200 font-medium', activeHi: 'text-[22px] font-extrabold text-yellow-400', finalEn: 'text-[11px] text-slate-400 font-light', finalHi: 'text-[16px] font-semibold text-slate-300' };
     }
   };
-
   const textClasses = getFontSizeClasses();
 
   return (
-    <div 
+    <div
       className="flex flex-col h-full w-full rounded-2xl border border-white/10 overflow-hidden text-white shadow-2xl transition-all duration-300"
-      style={{ 
-        backgroundColor: `rgba(10, 15, 30, ${opacity / 100})`,
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)'
-      }}
+      style={{ backgroundColor: `rgba(10, 15, 30, ${opacity / 100})`, backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
     >
       {/* Top Drag & Control Bar */}
       <div className="drag-region h-10 bg-slate-950/60 flex items-center justify-between px-4 cursor-move border-b border-white/5 select-none">
-        
-        {/* Left: Brand Name (Draggable) */}
+
+        {/* Left: Brand */}
         <div className="flex items-center gap-2">
           <span className="text-xs font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 via-indigo-300 to-purple-400 tracking-wider uppercase">OrbitCaptions</span>
-          
-          {/* Status Indicator */}
           <div className="flex items-center gap-1.5 ml-2">
             <span className={`w-2 h-2 rounded-full ${(isListening || isDemoMode) ? 'bg-emerald-500 animate-ping' : 'bg-slate-500'}`}></span>
             <span className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">
-              {isListening ? (audioSource === 'system' ? 'System Audio Live' : 'Mic Live') : isDemoMode ? 'Demo Active' : 'Offline'}
+              {isListening ? (audioSource === 'system' ? 'Gemini Live' : 'Mic Live') : isDemoMode ? 'Demo' : 'Offline'}
             </span>
           </div>
+          {/* Gemini badge */}
+          <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 uppercase tracking-wider ml-1">✨ Gemini</span>
         </div>
 
-        {/* Right: Controls & Actions (Not Draggable) */}
+        {/* Right: Controls */}
         <div className="flex items-center gap-3 no-drag">
-          {/* Customization Options */}
           <div className="flex items-center gap-2 mr-2 border-r border-white/10 pr-3">
-            
-            {/* Audio Source Toggle Button */}
+
+            {/* Audio Source Toggle */}
             <button
               onClick={() => setAudioSource(audioSource === 'system' ? 'mic' : 'system')}
               disabled={isListening}
               className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all border ${isListening ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-800'} ${audioSource === 'system' ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-slate-900/60 text-slate-400 border-white/5'}`}
-              title={audioSource === 'system' ? "Capturing Speaker/System Audio (Zoom output)" : "Capturing Microphone Audio (Your voice)"}
+              title={audioSource === 'system' ? 'Capturing Speaker/System Audio' : 'Capturing Microphone'}
             >
               {audioSource === 'system' ? '🔊 Speakers' : '🎙️ Mic'}
             </button>
 
-            {/* Opacity Selector */}
+            {/* Opacity Slider */}
             <div className="flex items-center gap-1.5 ml-1">
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-slate-400">
-                <circle cx="12" cy="12" r="10"></circle>
-                <path d="M12 2a10 10 0 0 0-10 10h20a10 10 0 0 0-10-10z" fill="currentColor"></path>
-              </svg>
-              <input 
-                type="range" 
-                min="20" 
-                max="100" 
-                value={opacity} 
-                onChange={(e) => setOpacity(parseInt(e.target.value))}
-                className="w-16 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-400 focus:outline-none"
-                title={`Opacity: ${opacity}%`}
-              />
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-slate-400"><circle cx="12" cy="12" r="10"></circle><path d="M12 2a10 10 0 0 0-10 10h20a10 10 0 0 0-10-10z" fill="currentColor"></path></svg>
+              <input type="range" min="20" max="100" value={opacity} onChange={(e) => setOpacity(parseInt(e.target.value))}
+                className="w-16 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-400 focus:outline-none" title={`Opacity: ${opacity}%`} />
             </div>
 
-            {/* Font Size Selector */}
+            {/* Font Size */}
             <div className="flex items-center bg-slate-900/60 rounded-md p-0.5 border border-white/5 ml-1">
               {['S', 'M', 'L', 'XL'].map((size, idx) => {
-                const sizeKeys = ['small', 'medium', 'large', 'xl'];
-                const key = sizeKeys[idx];
+                const key = ['small', 'medium', 'large', 'xl'][idx];
                 return (
-                  <button
-                    key={size}
-                    onClick={() => setFontSize(key)}
-                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded transition-all ${fontSize === key ? 'bg-indigo-500/80 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}
-                  >
+                  <button key={size} onClick={() => setFontSize(key)}
+                    className={`text-[9px] font-bold px-1.5 py-0.5 rounded transition-all ${fontSize === key ? 'bg-indigo-500/80 text-white shadow-sm' : 'text-slate-400 hover:text-slate-200'}`}>
                     {size}
                   </button>
                 );
@@ -652,40 +482,30 @@ function App() {
             </div>
           </div>
 
-          {/* Toggle Buttons */}
           <div className="flex items-center gap-2">
-            {/* Logs Copy Button */}
-            <button 
-              onClick={copyLogs}
-              className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all border ${logsCopied ? 'bg-emerald-600 text-white border-transparent shadow-[0_0_8px_rgba(16,185,129,0.2)]' : 'bg-slate-900/60 text-slate-400 border-white/5 hover:bg-slate-800'}`}
-              title="Copy Debug Logs & History to Clipboard"
-            >
+            {/* Logs */}
+            <button onClick={copyLogs}
+              className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all border ${logsCopied ? 'bg-emerald-600 text-white border-transparent' : 'bg-slate-900/60 text-slate-400 border-white/5 hover:bg-slate-800'}`}
+              title="Copy Debug Logs">
               {logsCopied ? '📋 Copied!' : '📋 Logs'}
             </button>
 
-            {/* Download Button */}
-            <button 
-              onClick={downloadTranscript}
+            {/* Download */}
+            <button onClick={downloadTranscript}
               className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all border ${transcriptHistory.length > 0 ? 'bg-indigo-600 hover:bg-indigo-500 text-white border-transparent shadow-[0_0_8px_rgba(79,70,229,0.3)]' : 'bg-slate-900/40 text-slate-400 border-white/5 hover:bg-slate-800'}`}
-              title="Download Entire Meeting Transcript (.txt)"
-            >
+              title="Download Transcript">
               📥 DL
             </button>
 
-            {/* Demo Button */}
-            <button 
-              onClick={toggleDemoMode}
-              className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all border ${isDemoMode ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 hover:bg-purple-500/30' : 'bg-slate-900/60 text-slate-400 border-white/5 hover:bg-slate-800'}`}
-              title="Toggle Simulated Demo Captions"
-            >
+            {/* Demo */}
+            <button onClick={toggleDemoMode}
+              className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition-all border ${isDemoMode ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 hover:bg-purple-500/30' : 'bg-slate-900/60 text-slate-400 border-white/5 hover:bg-slate-800'}`}>
               Demo
             </button>
 
-            {/* Microphone Button */}
-            <button 
-              onClick={toggleListening}
-              className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all border ${isListening ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.15)]' : 'bg-indigo-600 text-white border-transparent hover:bg-indigo-500'}`}
-            >
+            {/* Start/Stop */}
+            <button onClick={toggleListening}
+              className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all border ${isListening ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 hover:bg-emerald-500/30 shadow-[0_0_10px_rgba(16,185,129,0.15)]' : 'bg-indigo-600 text-white border-transparent hover:bg-indigo-500'}`}>
               <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
                 <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
@@ -696,46 +516,31 @@ function App() {
             </button>
           </div>
 
-          {/* Settings Button */}
-          <button 
-            onClick={() => setIsSettingsOpen(true)}
-            className="text-slate-400 hover:text-white transition-colors p-1 hover:bg-white/5 rounded-md ml-1"
-            title="Configure API Settings"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3"></circle>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            </svg>
+          {/* Settings */}
+          <button onClick={() => setIsSettingsOpen(true)} className="text-slate-400 hover:text-white transition-colors p-1 hover:bg-white/5 rounded-md ml-1" title="Settings">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
           </button>
 
-          {/* Close Button */}
-          <button 
-            onClick={closeApp} 
-            className="text-slate-400 hover:text-white transition-colors p-1 hover:bg-white/5 rounded-md ml-1"
-            title="Exit Application"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="18" y1="6" x2="6" y2="18"></line>
-              <line x1="6" y1="6" x2="18" y2="18"></line>
-            </svg>
+          {/* Close */}
+          <button onClick={closeApp} className="text-slate-400 hover:text-white transition-colors p-1 hover:bg-white/5 rounded-md ml-1" title="Exit">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
           </button>
         </div>
       </div>
 
-      {/* Captions Display Box */}
+      {/* Captions Display */}
       <div className="flex-grow p-4 flex flex-col justify-center gap-3 overflow-hidden select-none no-drag relative">
-        {/* Soft Background Accent Glows */}
         {(isListening || isDemoMode) && (
           <div className="absolute inset-0 bg-radial-gradient from-indigo-500/5 via-transparent to-transparent pointer-events-none animate-pulse"></div>
         )}
 
         {error && (
-          <div className="bg-red-950/40 border border-red-500/20 text-red-200 text-xs py-2 px-3 rounded-lg text-center font-medium shadow-inner flex flex-col items-center gap-1.5 animate-fadeIn">
+          <div className="bg-red-950/40 border border-red-500/20 text-red-200 text-xs py-2 px-3 rounded-lg text-center font-medium flex flex-col items-center gap-1.5">
             <span className="font-bold">⚠️ Notice</span>
             <span>{error}</span>
           </div>
         )}
-        
+
         {(!englishText && !hindiText && !error) && (
           <div className="flex flex-col items-center justify-center text-slate-500 text-center gap-2 py-4 animate-pulse">
             <div className="flex gap-1 items-center justify-center">
@@ -744,14 +549,18 @@ function App() {
               <span className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
             </div>
             <span className="text-xs uppercase tracking-widest font-bold">
-              {isListening ? (audioSource === 'system' ? "Listening to Zoom/Speaker..." : "Listening to Microphone...") : isDemoMode ? "Generating simulation..." : "Ready to caption. Click 'Speech' or 'Demo'"}
+              {isListening
+                ? (audioSource === 'system' ? 'Gemini listening to speakers...' : 'Gemini listening to mic...')
+                : isDemoMode ? 'Running demo...'
+                : !apiKey ? "⚠️ Enter Gemini API key in ⚙️ Settings first"
+                : "Ready — click 'Speech' or 'Demo'"}
             </span>
           </div>
         )}
 
-        {/* Rolling Layout: Last Finalized Caption (Dimmed on top) */}
+        {/* Rolling: Last finalized (dimmed top) */}
         {lastEnglishText && (
-          <div className="flex flex-col gap-1 border-l-2 border-slate-500/20 pl-3 py-0.5 opacity-60 scale-[0.98] origin-left transition-all duration-300 animate-fadeIn">
+          <div className="flex flex-col gap-1 border-l-2 border-slate-500/20 pl-3 py-0.5 opacity-60 scale-[0.98] origin-left transition-all duration-300">
             <div className={`${textClasses.finalEn} tracking-wide italic drop-shadow-sm`} style={{ fontFamily: "'Inter', sans-serif" }}>
               "{lastEnglishText}"
             </div>
@@ -763,22 +572,16 @@ function App() {
           </div>
         )}
 
-        {/* Rolling Layout: Current Active Caption (Bright at the bottom) */}
+        {/* Rolling: Active current (bright bottom) */}
         {(englishText || hindiText) && (
           <div className="flex flex-col gap-1 border-l-2 border-indigo-400 pl-3 py-0.5 transition-all duration-300">
             {englishText && (
-              <div 
-                className={`${textClasses.activeEn} tracking-wide italic drop-shadow-md line-clamp-2`}
-                style={{ fontFamily: "'Inter', sans-serif" }}
-              >
+              <div className={`${textClasses.activeEn} tracking-wide italic drop-shadow-md line-clamp-2`} style={{ fontFamily: "'Inter', sans-serif" }}>
                 "{englishText}"
               </div>
             )}
             {hindiText && (
-              <div 
-                className={`${textClasses.activeHi} leading-relaxed text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-400 drop-shadow-[0_2px_8px_rgba(251,191,36,0.3)]`}
-                style={{ fontFamily: "'Mukta', sans-serif" }}
-              >
+              <div className={`${textClasses.activeHi} leading-relaxed text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-400 drop-shadow-[0_2px_8px_rgba(251,191,36,0.3)]`} style={{ fontFamily: "'Mukta', sans-serif" }}>
                 {hindiText}
               </div>
             )}
@@ -786,100 +589,76 @@ function App() {
         )}
       </div>
 
-      {/* Mic sound level bar simulation */}
+      {/* Activity bar */}
       {(isListening || isDemoMode) && (
-        <div className="h-1 bg-gradient-to-r from-indigo-500 via-emerald-500 to-purple-500 w-full origin-left scale-x-100 transition-transform duration-300 opacity-60 animate-pulse"></div>
+        <div className="h-1 bg-gradient-to-r from-indigo-500 via-emerald-500 to-purple-500 w-full opacity-60 animate-pulse"></div>
       )}
 
-      {/* Settings Modal Overlay */}
+      {/* Settings Modal */}
       {isSettingsOpen && (
-        <div className="absolute inset-0 bg-slate-950/98 backdrop-blur-md flex flex-col justify-between p-4 z-50 animate-fadeIn no-drag">
+        <div className="absolute inset-0 bg-slate-950/98 backdrop-blur-md flex flex-col justify-between p-4 z-50 no-drag">
           <div className="flex flex-col gap-3 h-full overflow-hidden">
-            {/* Header / Tabs */}
+            {/* Tabs */}
             <div className="flex justify-between items-center border-b border-white/10 pb-2 select-none">
               <div className="flex gap-3">
-                <button
-                  onClick={() => setActiveTab('config')}
-                  className={`text-xs font-bold uppercase tracking-wider pb-1 transition-all border-b-2 ${activeTab === 'config' ? 'text-indigo-300 border-indigo-500' : 'text-slate-400 border-transparent hover:text-slate-200'}`}
-                >
+                <button onClick={() => setActiveTab('config')}
+                  className={`text-xs font-bold uppercase tracking-wider pb-1 transition-all border-b-2 ${activeTab === 'config' ? 'text-indigo-300 border-indigo-500' : 'text-slate-400 border-transparent hover:text-slate-200'}`}>
                   ⚙️ API Key
                 </button>
-                <button
-                  onClick={() => setActiveTab('logs')}
-                  className={`text-xs font-bold uppercase tracking-wider pb-1 transition-all border-b-2 ${activeTab === 'logs' ? 'text-indigo-300 border-indigo-500' : 'text-slate-400 border-transparent hover:text-slate-200'}`}
-                >
+                <button onClick={() => setActiveTab('logs')}
+                  className={`text-xs font-bold uppercase tracking-wider pb-1 transition-all border-b-2 ${activeTab === 'logs' ? 'text-indigo-300 border-indigo-500' : 'text-slate-400 border-transparent hover:text-slate-200'}`}>
                   📋 Session Logs
                 </button>
               </div>
-              <button 
-                onClick={() => {
-                  setTempApiKey(apiKey);
-                  setIsSettingsOpen(false);
-                }} 
-                className="text-slate-400 hover:text-white transition-colors"
-              >
+              <button onClick={() => { setTempApiKey(apiKey); setIsSettingsOpen(false); }} className="text-slate-400 hover:text-white transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
               </button>
             </div>
-            
+
             {/* Body */}
             <div className="flex-grow overflow-y-auto pr-1">
               {activeTab === 'config' ? (
                 <div className="flex flex-col gap-2 py-1">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Deepgram API Key</label>
-                  <input 
-                    type="password" 
-                    value={tempApiKey} 
-                    onChange={(e) => setTempApiKey(e.target.value)}
-                    placeholder="Enter your Deepgram API Key..." 
-                    className="bg-slate-900 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-full font-mono"
-                  />
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Google Gemini API Key</label>
+                  <input type="password" value={tempApiKey} onChange={(e) => setTempApiKey(e.target.value)}
+                    placeholder="Paste your Gemini API key here..."
+                    className="bg-slate-900 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-full font-mono" />
                   <span className="text-[9px] text-slate-500">
-                    You can get a free API key with $200 credits from <a href="https://console.deepgram.com" target="_blank" rel="noreferrer" className="text-indigo-400 underline hover:text-indigo-300 no-drag">console.deepgram.com</a>.
+                    Get a free API key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-indigo-400 underline hover:text-indigo-300 no-drag">aistudio.google.com/apikey</a>
                   </span>
+                  <div className="mt-1 p-2 bg-blue-950/40 border border-blue-500/20 rounded-lg">
+                    <p className="text-[9px] text-blue-300 font-semibold">✨ Powered by Gemini 3.5 Live Translate</p>
+                    <p className="text-[8px] text-slate-400 mt-0.5">English audio → Hindi text in one step. No separate translation API needed.</p>
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col gap-2 h-full py-1 overflow-hidden">
                   <div className="flex justify-between items-center">
                     <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Raw Debug Data & History</span>
-                    <button 
-                      onClick={copyLogs}
-                      className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all border ${logsCopied ? 'bg-emerald-600 text-white border-transparent shadow-[0_0_8px_rgba(16,185,129,0.2)]' : 'bg-indigo-600 text-white border-transparent hover:bg-indigo-500 shadow-[0_0_8px_rgba(79,70,229,0.2)]'}`}
-                    >
+                    <button onClick={copyLogs}
+                      className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all border ${logsCopied ? 'bg-emerald-600 text-white border-transparent' : 'bg-indigo-600 text-white border-transparent hover:bg-indigo-500'}`}>
                       {logsCopied ? 'Copied!' : 'Copy to Clipboard'}
                     </button>
                   </div>
-                  <textarea 
-                    readOnly
-                    value={getLogText()}
-                    className="bg-slate-900 border border-white/10 rounded-lg p-2 text-[10px] text-slate-300 font-mono focus:outline-none w-full h-[75px] resize-none overflow-y-auto"
-                  />
+                  <textarea readOnly value={getLogText()}
+                    className="bg-slate-900 border border-white/10 rounded-lg p-2 text-[10px] text-slate-300 font-mono focus:outline-none w-full h-[75px] resize-none overflow-y-auto" />
                 </div>
               )}
             </div>
           </div>
 
-          {/* Footer (Only show save/cancel buttons if on config tab) */}
           {activeTab === 'config' && (
             <div className="flex justify-end gap-2 border-t border-white/10 pt-2.5">
-              <button 
-                onClick={() => {
-                  setTempApiKey(apiKey);
-                  setIsSettingsOpen(false);
-                }}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-white/5 transition-all"
-              >
+              <button onClick={() => { setTempApiKey(apiKey); setIsSettingsOpen(false); }}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-white/5 transition-all">
                 Cancel
               </button>
-              <button 
-                onClick={() => {
-                  localStorage.setItem('deepgram_api_key', tempApiKey);
-                  setApiKey(tempApiKey);
-                  setIsSettingsOpen(false);
-                  setError('');
-                }}
-                className="px-4 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md transition-all"
-              >
+              <button onClick={() => {
+                localStorage.setItem('gemini_api_key', tempApiKey);
+                setApiKey(tempApiKey);
+                setIsSettingsOpen(false);
+                setError('');
+              }} className="px-4 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md transition-all">
                 Save
               </button>
             </div>
@@ -891,4 +670,3 @@ function App() {
 }
 
 export default App;
-
