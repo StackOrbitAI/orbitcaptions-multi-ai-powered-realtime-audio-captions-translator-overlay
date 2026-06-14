@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 
-// Gemini Live Translate Model
-const GEMINI_MODEL = 'gemini-3.5-live-translate-preview';
+// Gemini Live Audio model — supports system_instruction, no translation_config needed
+// gemini-2.5-flash-native-audio-latest is confirmed available on this API key
+const GEMINI_MODEL = 'gemini-2.5-flash-native-audio-latest';
 
 // Demo mode dialogues (English & Hindi)
 const DEMO_DIALOGUES = [
@@ -152,9 +153,8 @@ function App() {
       const processor = audioContext.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
 
-      // 3. Open Gemini Live Translate WebSocket
-      // Must use v1alpha — translation_config is only available in v1alpha endpoint
-      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${key}`;
+      // 3. Open Gemini Live WebSocket (v1beta — works with system_instruction)
+      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${key}`;
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
 
@@ -162,25 +162,27 @@ function App() {
       let setupComplete = false;
 
       socket.onopen = () => {
-        console.log('Gemini Live Translate WebSocket connected (v1alpha).');
+        console.log('Gemini Live WebSocket connected (v1beta).');
 
-        // 4. Send CORRECT setup for gemini-3.5-live-translate-preview
-        // translation_config must be at the TOP LEVEL of setup (not inside generation_config)
-        // Must use v1alpha or this field is rejected
+        // 4. Send CORRECT setup for gemini-2.5-flash-native-audio-latest
+        // This model supports system_instruction — use it to instruct EN→HI transcription+translation
+        // No translation_config needed (that field only works in Python SDK, not raw WebSocket)
         const setupMsg = {
           setup: {
             model: `models/${GEMINI_MODEL}`,
             generation_config: {
               response_modalities: ['TEXT'],
             },
-            translation_config: {
-              target_language_code: 'hi-IN',
+            system_instruction: {
+              parts: [{
+                text: 'You are a real-time English to Hindi interpreter. The user will stream live audio. For every utterance you hear, respond ONLY with valid JSON in this exact format, nothing else: {"en": "<english transcription>", "hi": "<hindi translation>"}. Keep Hindi natural and conversational. Be fast and accurate. Never add any text outside the JSON object.'
+              }]
             }
           }
         };
-        console.log('Sending Gemini v1alpha setup:', JSON.stringify(setupMsg));
+        console.log('Sending Gemini setup:', JSON.stringify(setupMsg));
         socket.send(JSON.stringify(setupMsg));
-        // Do NOT start audio yet — must wait for setupComplete message from server
+        // Do NOT start audio yet — wait for setupComplete from server
       };
 
       // 5. Handle all incoming Gemini messages
@@ -194,6 +196,7 @@ function App() {
             setupComplete = true;
             console.log('Gemini setup complete. Starting audio stream...');
             setIsListening(true);
+            setError('');
 
             // NOW start streaming PCM audio to Gemini
             processor.onaudioprocess = (e) => {
@@ -216,7 +219,6 @@ function App() {
               }
             };
 
-            // Silent gain — needed to activate onaudioprocess, but volume 0 to avoid feedback
             const silentGain = audioContext.createGain();
             silentGain.gain.value = 0;
             source.connect(processor);
@@ -225,29 +227,32 @@ function App() {
             return;
           }
 
-          // --- Parse translation output ---
-          // inputTranscription = English source (what was spoken)
-          const inputText = msg?.inputTranscription?.text || '';
-          if (inputText.trim()) {
-            currentEnRef.current = inputText.trim();
-            setEnglishText(inputText.trim());
-          }
-
-          // outputTranscription = Hindi translated text
-          const outputText = msg?.outputTranscription?.text || '';
-          if (outputText.trim()) {
-            currentHiRef.current = outputText.trim();
-            setHindiText(outputText.trim());
-          }
-
-          // Fallback: modelTurn parts (used by some Live model versions)
+          // --- Parse JSON response from system_instruction format ---
+          // Model outputs {"en": "...", "hi": "..."} per our instruction
           const parts = msg?.serverContent?.modelTurn?.parts || [];
+          let textBuffer = '';
           for (const part of parts) {
-            if (part.text?.trim() && !outputText) {
-              currentHiRef.current = part.text.trim();
-              setHindiText(part.text.trim());
+            if (part.text) textBuffer += part.text;
+          }
+          if (textBuffer.trim()) {
+            // Extract JSON object from text
+            const jsonMatch = textBuffer.match(/\{[\s\S]*?"en"[\s\S]*?"hi"[\s\S]*?\}/);
+            if (jsonMatch) {
+              try {
+                const parsed = JSON.parse(jsonMatch[0]);
+                const en = (parsed.en || '').trim();
+                const hi = (parsed.hi || '').trim();
+                if (en) { currentEnRef.current = en; setEnglishText(en); }
+                if (hi) { currentHiRef.current = hi; setHindiText(hi); }
+              } catch (_) { /* partial JSON, wait */ }
             }
           }
+
+          // Also handle native transcription fields (fallback)
+          const inputText = msg?.inputTranscription?.text || '';
+          if (inputText.trim()) { currentEnRef.current = inputText.trim(); setEnglishText(inputText.trim()); }
+          const outputText = msg?.outputTranscription?.text || '';
+          if (outputText.trim()) { currentHiRef.current = outputText.trim(); setHindiText(outputText.trim()); }
 
           // Turn complete → push to history
           if (msg?.serverContent?.turnComplete === true) {
@@ -535,10 +540,29 @@ function App() {
           <div className="absolute inset-0 bg-radial-gradient from-indigo-500/5 via-transparent to-transparent pointer-events-none animate-pulse"></div>
         )}
 
+        {/* Error — small dismissible toast pinned to top of captions, with copy button */}
         {error && (
-          <div className="bg-red-950/40 border border-red-500/20 text-red-200 text-xs py-2 px-3 rounded-lg text-center font-medium flex flex-col items-center gap-1.5">
-            <span className="font-bold">⚠️ Notice</span>
-            <span>{error}</span>
+          <div className="flex items-start gap-2 bg-red-950/70 border border-red-500/30 text-red-200 text-[10px] py-1.5 px-2.5 rounded-lg font-medium">
+            <span className="shrink-0 mt-0.5">⚠️</span>
+            <span className="flex-1 leading-relaxed select-text cursor-text">{error}</span>
+            <div className="flex gap-1 shrink-0">
+              <button
+                onClick={() => {
+                  const txt = error;
+                  if (window.electronAPI?.copyToClipboard) window.electronAPI.copyToClipboard(txt);
+                  else navigator.clipboard.writeText(txt).catch(console.error);
+                }}
+                className="px-1.5 py-0.5 rounded bg-red-800/60 hover:bg-red-700/60 text-red-200 text-[9px] font-bold uppercase tracking-wider transition-all"
+                title="Copy error text">
+                Copy
+              </button>
+              <button
+                onClick={() => setError('')}
+                className="px-1.5 py-0.5 rounded bg-red-800/60 hover:bg-red-700/60 text-red-200 text-[9px] font-bold uppercase tracking-wider transition-all"
+                title="Dismiss">
+                ✕
+              </button>
+            </div>
           </div>
         )}
 
