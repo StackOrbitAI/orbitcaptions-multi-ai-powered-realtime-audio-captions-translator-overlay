@@ -218,12 +218,8 @@ function App() {
                 text: systemInstructionText
               }]
             },
-            input_audio_transcription: {
-              language_codes: sourceLangCodes
-            },
-            output_audio_transcription: {
-              language_codes: targetLangCodes
-            }
+            input_audio_transcription: {},
+            output_audio_transcription: {}
           }
         };
         console.log('Sending Gemini setup:', JSON.stringify(setupMsg));
