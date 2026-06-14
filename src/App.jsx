@@ -107,7 +107,10 @@ function App() {
     currentEnRef.current = '';
     currentHiRef.current = '';
 
-    const key = apiKey.trim();
+    let key = apiKey.trim();
+    if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
+      key = key.slice(1, -1).trim();
+    }
     if (!key) {
       setError('Gemini API key missing. Open ⚙️ Settings and enter your key.');
       return;
@@ -667,8 +670,13 @@ function App() {
                 Cancel
               </button>
               <button onClick={() => {
-                localStorage.setItem('gemini_api_key', tempApiKey);
-                setApiKey(tempApiKey);
+                let cleanedKey = tempApiKey.trim();
+                if ((cleanedKey.startsWith('"') && cleanedKey.endsWith('"')) || (cleanedKey.startsWith("'") && cleanedKey.endsWith("'"))) {
+                  cleanedKey = cleanedKey.slice(1, -1).trim();
+                }
+                localStorage.setItem('gemini_api_key', cleanedKey);
+                setApiKey(cleanedKey);
+                setTempApiKey(cleanedKey);
                 setIsSettingsOpen(false);
                 setError('');
               }} className="px-4 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md transition-all">
