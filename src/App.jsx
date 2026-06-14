@@ -171,13 +171,15 @@ function App() {
           setup: {
             model: `models/${GEMINI_MODEL}`,
             generation_config: {
-              response_modalities: ['TEXT'],
+              response_modalities: ['AUDIO'],
             },
             system_instruction: {
               parts: [{
-                text: 'You are a real-time English to Hindi interpreter. The user will stream live audio. For every utterance you hear, respond ONLY with valid JSON in this exact format, nothing else: {"en": "<english transcription>", "hi": "<hindi translation>"}. Keep Hindi natural and conversational. Be fast and accurate. Never add any text outside the JSON object.'
+                text: 'You are a real-time English to Hindi interpreter. The user will stream live audio in English. Translate everything they say into Hindi and speak the translation. Be natural, conversational, and direct. Do not add any introductory or explanatory text.'
               }]
-            }
+            },
+            input_audio_transcription: {},
+            output_audio_transcription: {}
           }
         };
         console.log('Sending Gemini setup:', JSON.stringify(setupMsg));
@@ -227,32 +229,18 @@ function App() {
             return;
           }
 
-          // --- Parse JSON response from system_instruction format ---
-          // Model outputs {"en": "...", "hi": "..."} per our instruction
-          const parts = msg?.serverContent?.modelTurn?.parts || [];
-          let textBuffer = '';
-          for (const part of parts) {
-            if (part.text) textBuffer += part.text;
-          }
-          if (textBuffer.trim()) {
-            // Extract JSON object from text
-            const jsonMatch = textBuffer.match(/\{[\s\S]*?"en"[\s\S]*?"hi"[\s\S]*?\}/);
-            if (jsonMatch) {
-              try {
-                const parsed = JSON.parse(jsonMatch[0]);
-                const en = (parsed.en || '').trim();
-                const hi = (parsed.hi || '').trim();
-                if (en) { currentEnRef.current = en; setEnglishText(en); }
-                if (hi) { currentHiRef.current = hi; setHindiText(hi); }
-              } catch (_) { /* partial JSON, wait */ }
-            }
+          // Handle real-time audio transcriptions from Gemini Live API
+          const inputText = msg?.serverContent?.inputTranscription?.text || msg?.inputTranscription?.text || '';
+          if (inputText.trim()) {
+            currentEnRef.current = inputText.trim();
+            setEnglishText(inputText.trim());
           }
 
-          // Also handle native transcription fields (fallback)
-          const inputText = msg?.inputTranscription?.text || '';
-          if (inputText.trim()) { currentEnRef.current = inputText.trim(); setEnglishText(inputText.trim()); }
-          const outputText = msg?.outputTranscription?.text || '';
-          if (outputText.trim()) { currentHiRef.current = outputText.trim(); setHindiText(outputText.trim()); }
+          const outputText = msg?.serverContent?.outputTranscription?.text || msg?.outputTranscription?.text || '';
+          if (outputText.trim()) {
+            currentHiRef.current = outputText.trim();
+            setHindiText(outputText.trim());
+          }
 
           // Turn complete → push to history
           if (msg?.serverContent?.turnComplete === true) {
