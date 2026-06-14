@@ -238,17 +238,17 @@ function App() {
             return;
           }
 
-          // Handle real-time audio transcriptions from Gemini Live API
+          // Handle real-time audio transcriptions from Gemini Live API (accumulate word-by-word)
           const inputText = msg?.serverContent?.inputTranscription?.text || msg?.inputTranscription?.text || '';
-          if (inputText.trim()) {
-            currentEnRef.current = inputText.trim();
-            setEnglishText(inputText.trim());
+          if (inputText) {
+            currentEnRef.current = currentEnRef.current + inputText;
+            setEnglishText(currentEnRef.current.trim());
           }
 
           const outputText = msg?.serverContent?.outputTranscription?.text || msg?.outputTranscription?.text || '';
-          if (outputText.trim()) {
-            currentHiRef.current = outputText.trim();
-            setHindiText(outputText.trim());
+          if (outputText) {
+            currentHiRef.current = currentHiRef.current + outputText;
+            setHindiText(currentHiRef.current.trim());
           }
 
           // Turn complete → push to history
