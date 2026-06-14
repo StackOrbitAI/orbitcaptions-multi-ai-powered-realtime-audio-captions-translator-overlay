@@ -248,16 +248,16 @@ function App() {
         }
 
         // Constraints for capturing desktop system audio in Electron
-        // Disables browser filters (echo cancellation/noise suppression) for clear loopback
+        // Disables browser filters (echo cancellation/noise suppression) inside mandatory to prevent constraint errors
         const constraints = {
           audio: {
             mandatory: {
               chromeMediaSource: 'desktop',
-              chromeMediaSourceId: sourceId
-            },
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false
+              chromeMediaSourceId: sourceId,
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: false
+            }
           },
           video: {
             mandatory: {
