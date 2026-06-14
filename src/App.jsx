@@ -165,7 +165,7 @@ function App() {
       const audioContext = new AudioContext({ sampleRate: 16000 });
       audioContextRef.current = audioContext;
       const source = audioContext.createMediaStreamSource(stream);
-      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      const processor = audioContext.createScriptProcessor(1024, 1, 1);
       processorRef.current = processor;
 
       // 3. Open Gemini Live WebSocket (v1beta — works with system_instruction)
