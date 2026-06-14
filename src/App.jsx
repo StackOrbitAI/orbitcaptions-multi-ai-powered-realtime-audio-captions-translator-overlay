@@ -153,16 +153,20 @@ function App() {
       processorRef.current = processor;
 
       // 3. Open Gemini Live Translate WebSocket
-      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${key}`;
+      // Must use v1alpha — translation_config is only available in v1alpha endpoint
+      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${key}`;
       const socket = new WebSocket(wsUrl);
       socketRef.current = socket;
 
-      socket.onopen = () => {
-        console.log('Gemini Live Translate WebSocket connected.');
+      // Track whether setup is complete before sending audio
+      let setupComplete = false;
 
-        // 4. Send CORRECT setup message for gemini-3.5-live-translate-preview
-        // IMPORTANT: This model does NOT support system_instruction or function calling
-        // Use translation_config with target_language_code instead
+      socket.onopen = () => {
+        console.log('Gemini Live Translate WebSocket connected (v1alpha).');
+
+        // 4. Send CORRECT setup for gemini-3.5-live-translate-preview
+        // translation_config must be at the TOP LEVEL of setup (not inside generation_config)
+        // Must use v1alpha or this field is rejected
         const setupMsg = {
           setup: {
             model: `models/${GEMINI_MODEL}`,
@@ -170,89 +174,83 @@ function App() {
               response_modalities: ['TEXT'],
             },
             translation_config: {
-              target_language_code: 'hi-IN',  // Hindi (India)
+              target_language_code: 'hi-IN',
             }
           }
         };
-        console.log('Sending Gemini setup:', JSON.stringify(setupMsg));
+        console.log('Sending Gemini v1alpha setup:', JSON.stringify(setupMsg));
         socket.send(JSON.stringify(setupMsg));
-
-        // 5. Stream raw PCM16 audio chunks to Gemini
-        processor.onaudioprocess = (e) => {
-          if (socket.readyState === WebSocket.OPEN) {
-            const float32 = e.inputBuffer.getChannelData(0);
-            const int16 = new Int16Array(float32.length);
-            for (let i = 0; i < float32.length; i++) {
-              const s = Math.max(-1, Math.min(1, float32[i]));
-              int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-            }
-            // Convert Int16Array to base64
-            const bytes = new Uint8Array(int16.buffer);
-            let binary = '';
-            bytes.forEach(b => binary += String.fromCharCode(b));
-            const base64 = btoa(binary);
-
-            const audioMsg = {
-              realtime_input: {
-                media_chunks: [{
-                  mime_type: 'audio/pcm;rate=16000',
-                  data: base64
-                }]
-              }
-            };
-            socket.send(JSON.stringify(audioMsg));
-          }
-        };
-
-        // Silent gain node — required to fire onaudioprocess without audio feedback
-        const silentGain = audioContext.createGain();
-        silentGain.gain.value = 0;
-        source.connect(processor);
-        processor.connect(silentGain);
-        silentGain.connect(audioContext.destination);
-
-        setIsListening(true);
+        // Do NOT start audio yet — must wait for setupComplete message from server
       };
 
-      // 6. Handle incoming Gemini Live Translate responses
-      // Live Translate model outputs:
-      //   msg.outputTranscription.text  → translated Hindi text (what we want to show)
-      //   msg.inputTranscription.text   → English source transcription
-      //   msg.serverContent.turnComplete → end of utterance
+      // 5. Handle all incoming Gemini messages
       socket.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
-          console.log('Gemini msg:', JSON.stringify(msg).substring(0, 300));
+          console.log('Gemini msg:', JSON.stringify(msg).substring(0, 400));
 
-          // English source transcription (interim + final)
+          // --- Wait for setupComplete before streaming audio ---
+          if (msg?.setupComplete !== undefined && !setupComplete) {
+            setupComplete = true;
+            console.log('Gemini setup complete. Starting audio stream...');
+            setIsListening(true);
+
+            // NOW start streaming PCM audio to Gemini
+            processor.onaudioprocess = (e) => {
+              if (socket.readyState === WebSocket.OPEN && setupComplete) {
+                const float32 = e.inputBuffer.getChannelData(0);
+                const int16 = new Int16Array(float32.length);
+                for (let i = 0; i < float32.length; i++) {
+                  const s = Math.max(-1, Math.min(1, float32[i]));
+                  int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+                const bytes = new Uint8Array(int16.buffer);
+                let binary = '';
+                bytes.forEach(b => binary += String.fromCharCode(b));
+                const base64 = btoa(binary);
+                socket.send(JSON.stringify({
+                  realtime_input: {
+                    media_chunks: [{ mime_type: 'audio/pcm;rate=16000', data: base64 }]
+                  }
+                }));
+              }
+            };
+
+            // Silent gain — needed to activate onaudioprocess, but volume 0 to avoid feedback
+            const silentGain = audioContext.createGain();
+            silentGain.gain.value = 0;
+            source.connect(processor);
+            processor.connect(silentGain);
+            silentGain.connect(audioContext.destination);
+            return;
+          }
+
+          // --- Parse translation output ---
+          // inputTranscription = English source (what was spoken)
           const inputText = msg?.inputTranscription?.text || '';
           if (inputText.trim()) {
             currentEnRef.current = inputText.trim();
             setEnglishText(inputText.trim());
           }
 
-          // Hindi translated output (this is what Gemini Live Translate provides)
+          // outputTranscription = Hindi translated text
           const outputText = msg?.outputTranscription?.text || '';
           if (outputText.trim()) {
             currentHiRef.current = outputText.trim();
             setHindiText(outputText.trim());
           }
 
-          // Also check modelTurn parts (fallback for some response formats)
+          // Fallback: modelTurn parts (used by some Live model versions)
           const parts = msg?.serverContent?.modelTurn?.parts || [];
           for (const part of parts) {
-            if (part.text && part.text.trim()) {
-              // If we got no output transcription, use model parts as Hindi
-              if (!outputText) {
-                currentHiRef.current = part.text.trim();
-                setHindiText(part.text.trim());
-              }
+            if (part.text?.trim() && !outputText) {
+              currentHiRef.current = part.text.trim();
+              setHindiText(part.text.trim());
             }
           }
 
-          // Turn complete = finalize this sentence into history
-          const isTurnComplete = msg?.serverContent?.turnComplete === true;
-          if (isTurnComplete) {
+          // Turn complete → push to history
+          if (msg?.serverContent?.turnComplete === true) {
             finalizeCurrentSentence();
           }
 
