@@ -574,10 +574,13 @@ function App() {
         {/* Scrollable captions wrapper (auto-scrolls to bottom) */}
         <div
           ref={scrollContainerRef}
-          className="flex-grow flex flex-col justify-end gap-3 overflow-y-auto no-scrollbar"
+          className="flex-grow flex flex-col gap-3 overflow-y-auto no-scrollbar"
         >
+          {/* Spacer to push content to bottom without justify-end flex bug */}
+          <div className="flex-grow min-h-[0px]" />
+
           {(!englishText && !hindiText && !error) && (
-            <div className="flex flex-col items-center justify-center text-slate-500 text-center gap-2 py-4 animate-pulse">
+            <div className="flex flex-col items-center justify-center text-slate-500 text-center gap-2 py-4 animate-pulse shrink-0">
               <div className="flex gap-1 items-center justify-center">
                 <span className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
                 <span className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
@@ -611,7 +614,7 @@ function App() {
           {(englishText || hindiText) && (
             <div className="flex flex-col gap-1 border-l-2 border-indigo-400 pl-3 py-0.5 transition-all duration-300 shrink-0">
               {englishText && (
-                <div className={`${textClasses.activeEn} tracking-wide italic drop-shadow-md line-clamp-2`} style={{ fontFamily: "'Inter', sans-serif" }}>
+                <div className={`${textClasses.activeEn} tracking-wide italic drop-shadow-md`} style={{ fontFamily: "'Inter', sans-serif" }}>
                   "{englishText}"
                 </div>
               )}
