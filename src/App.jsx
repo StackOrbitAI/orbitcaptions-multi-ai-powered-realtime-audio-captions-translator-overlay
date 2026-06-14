@@ -36,6 +36,7 @@ function App() {
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [tempApiKey, setTempApiKey] = useState(apiKey);
+  const [activeTab, setActiveTab] = useState('config'); // 'config' or 'logs'
   const [logsCopied, setLogsCopied] = useState(false);
   
   // Refs for managing streaming resources
@@ -424,28 +425,8 @@ function App() {
     setIsDemoMode(!isDemoMode);
   };
 
-  const downloadTranscript = () => {
-    if (transcriptHistory.length === 0) return;
-    
-    // Generate formatted text content
-    const content = transcriptHistory.map(item => 
-      `[${item.time}]\nEnglish: "${item.en}"\nHindi:   "${item.hi}"\n`
-    ).join('\n');
-    
-    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    // Generate name with today's date
-    const dateStr = new Date().toISOString().slice(0, 10);
-    link.download = `OrbitCaptions_Transcript_${dateStr}.txt`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
-  const copyLogs = () => {
+  // Get JSON log text containing session debugging data
+  const getLogText = () => {
     const logData = {
       timestamp: new Date().toISOString(),
       error: error || 'None',
@@ -456,17 +437,69 @@ function App() {
       userAgent: navigator.userAgent,
       activeEnglish: englishText || 'None',
       activeHindi: hindiText || 'None',
+      lastEnglishText: lastEnglishText || 'None',
+      lastHindiText: lastHindiText || 'None',
       historyCount: transcriptHistory.length,
       history: transcriptHistory.map(item => `[${item.time}] EN: "${item.en}" | HI: "${item.hi}"`).join('\n')
     };
+    return JSON.stringify(logData, null, 2);
+  };
 
-    const logText = JSON.stringify(logData, null, 2);
-    navigator.clipboard.writeText(logText).then(() => {
-      setLogsCopied(true);
-      setTimeout(() => setLogsCopied(false), 2000);
-    }).catch(err => {
-      console.error("Failed to copy logs:", err);
-    });
+  const downloadTranscript = async () => {
+    if (transcriptHistory.length === 0) {
+      setError("No transcript history captured yet. Speak or activate Demo mode first.");
+      setTimeout(() => setError(""), 5000);
+      return;
+    }
+    
+    // Generate formatted text content
+    const content = transcriptHistory.map(item => 
+      `[${item.time}]\nEnglish: "${item.en}"\nHindi:   "${item.hi}"\n`
+    ).join('\n');
+    
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `OrbitCaptions_Transcript_${dateStr}.txt`;
+
+    if (window.electronAPI && window.electronAPI.saveFile) {
+      const result = await window.electronAPI.saveFile(content, filename);
+      if (result && result.error) {
+        setError(`Failed to save transcript: ${result.error}`);
+        setTimeout(() => setError(""), 5000);
+      }
+    } else {
+      // Fallback for browser testing
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+  };
+
+  const copyLogs = async () => {
+    const logText = getLogText();
+    
+    if (window.electronAPI && window.electronAPI.copyToClipboard) {
+      const result = await window.electronAPI.copyToClipboard(logText);
+      if (result && result.success) {
+        setLogsCopied(true);
+        setTimeout(() => setLogsCopied(false), 2000);
+      } else {
+        console.error("Native copy failed:", result?.error);
+      }
+    } else {
+      // Fallback
+      navigator.clipboard.writeText(logText).then(() => {
+        setLogsCopied(true);
+        setTimeout(() => setLogsCopied(false), 2000);
+      }).catch(err => {
+        console.error("Failed to copy logs:", err);
+      });
+    }
   };
 
   const closeApp = () => {
@@ -604,8 +637,7 @@ function App() {
             {/* Download Button */}
             <button 
               onClick={downloadTranscript}
-              disabled={transcriptHistory.length === 0}
-              className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all border ${transcriptHistory.length > 0 ? 'bg-indigo-600 hover:bg-indigo-500 text-white border-transparent shadow-[0_0_8px_rgba(79,70,229,0.3)]' : 'bg-slate-900/40 text-slate-600 border-white/5 cursor-not-allowed'}`}
+              className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all border ${transcriptHistory.length > 0 ? 'bg-indigo-600 hover:bg-indigo-500 text-white border-transparent shadow-[0_0_8px_rgba(79,70,229,0.3)]' : 'bg-slate-900/40 text-slate-400 border-white/5 hover:bg-slate-800'}`}
               title="Download Entire Meeting Transcript (.txt)"
             >
               📥 DL
@@ -732,13 +764,24 @@ function App() {
 
       {/* Settings Modal Overlay */}
       {isSettingsOpen && (
-        <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-md flex flex-col justify-between p-4 z-50 animate-fadeIn no-drag">
-          <div className="flex flex-col gap-3">
-            <div className="flex justify-between items-center border-b border-white/10 pb-2">
-              <span className="text-xs font-bold text-indigo-300 uppercase tracking-wider flex items-center gap-1.5">
-                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-                API Settings
-              </span>
+        <div className="absolute inset-0 bg-slate-950/98 backdrop-blur-md flex flex-col justify-between p-4 z-50 animate-fadeIn no-drag">
+          <div className="flex flex-col gap-3 h-full overflow-hidden">
+            {/* Header / Tabs */}
+            <div className="flex justify-between items-center border-b border-white/10 pb-2 select-none">
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setActiveTab('config')}
+                  className={`text-xs font-bold uppercase tracking-wider pb-1 transition-all border-b-2 ${activeTab === 'config' ? 'text-indigo-300 border-indigo-500' : 'text-slate-400 border-transparent hover:text-slate-200'}`}
+                >
+                  ⚙️ API Key
+                </button>
+                <button
+                  onClick={() => setActiveTab('logs')}
+                  className={`text-xs font-bold uppercase tracking-wider pb-1 transition-all border-b-2 ${activeTab === 'logs' ? 'text-indigo-300 border-indigo-500' : 'text-slate-400 border-transparent hover:text-slate-200'}`}
+                >
+                  📋 Session Logs
+                </button>
+              </div>
               <button 
                 onClick={() => {
                   setTempApiKey(apiKey);
@@ -750,43 +793,68 @@ function App() {
               </button>
             </div>
             
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Deepgram API Key</label>
-              <input 
-                type="password" 
-                value={tempApiKey} 
-                onChange={(e) => setTempApiKey(e.target.value)}
-                placeholder="Enter your Deepgram API Key..." 
-                className="bg-slate-900 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-full font-mono"
-              />
-              <span className="text-[9px] text-slate-500">
-                You can get a free API key with $200 credits from <a href="https://console.deepgram.com" target="_blank" rel="noreferrer" className="text-indigo-400 underline hover:text-indigo-300 no-drag">console.deepgram.com</a>.
-              </span>
+            {/* Body */}
+            <div className="flex-grow overflow-y-auto pr-1">
+              {activeTab === 'config' ? (
+                <div className="flex flex-col gap-2 py-1">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Deepgram API Key</label>
+                  <input 
+                    type="password" 
+                    value={tempApiKey} 
+                    onChange={(e) => setTempApiKey(e.target.value)}
+                    placeholder="Enter your Deepgram API Key..." 
+                    className="bg-slate-900 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-full font-mono"
+                  />
+                  <span className="text-[9px] text-slate-500">
+                    You can get a free API key with $200 credits from <a href="https://console.deepgram.com" target="_blank" rel="noreferrer" className="text-indigo-400 underline hover:text-indigo-300 no-drag">console.deepgram.com</a>.
+                  </span>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2 h-full py-1 overflow-hidden">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Raw Debug Data & History</span>
+                    <button 
+                      onClick={copyLogs}
+                      className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider transition-all border ${logsCopied ? 'bg-emerald-600 text-white border-transparent shadow-[0_0_8px_rgba(16,185,129,0.2)]' : 'bg-indigo-600 text-white border-transparent hover:bg-indigo-500 shadow-[0_0_8px_rgba(79,70,229,0.2)]'}`}
+                    >
+                      {logsCopied ? 'Copied!' : 'Copy to Clipboard'}
+                    </button>
+                  </div>
+                  <textarea 
+                    readOnly
+                    value={getLogText()}
+                    className="bg-slate-900 border border-white/10 rounded-lg p-2 text-[10px] text-slate-300 font-mono focus:outline-none w-full h-[75px] resize-none overflow-y-auto"
+                  />
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="flex justify-end gap-2 border-t border-white/10 pt-3">
-            <button 
-              onClick={() => {
-                setTempApiKey(apiKey);
-                setIsSettingsOpen(false);
-              }}
-              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-white/5 transition-all"
-            >
-              Cancel
-            </button>
-            <button 
-              onClick={() => {
-                localStorage.setItem('deepgram_api_key', tempApiKey);
-                setApiKey(tempApiKey);
-                setIsSettingsOpen(false);
-                setError('');
-              }}
-              className="px-4 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md transition-all"
-            >
-              Save
-            </button>
-          </div>
+          {/* Footer (Only show save/cancel buttons if on config tab) */}
+          {activeTab === 'config' && (
+            <div className="flex justify-end gap-2 border-t border-white/10 pt-2.5">
+              <button 
+                onClick={() => {
+                  setTempApiKey(apiKey);
+                  setIsSettingsOpen(false);
+                }}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-white/5 transition-all"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  localStorage.setItem('deepgram_api_key', tempApiKey);
+                  setApiKey(tempApiKey);
+                  setIsSettingsOpen(false);
+                  setError('');
+                }}
+                className="px-4 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md transition-all"
+              >
+                Save
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

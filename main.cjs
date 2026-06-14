@@ -1,5 +1,6 @@
-const { app, BrowserWindow, ipcMain, session, desktopCapturer } = require('electron');
+const { app, BrowserWindow, ipcMain, session, desktopCapturer, dialog, clipboard } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 const isDev = process.env.NODE_ENV === 'development';
 
@@ -83,4 +84,31 @@ ipcMain.handle('get-desktop-source-id', async () => {
     console.error("Error getting desktop sources:", e);
   }
   return null;
+});
+
+ipcMain.handle('save-file', async (event, { content, filename }) => {
+  try {
+    const { filePath } = await dialog.showSaveDialog({
+      defaultPath: filename,
+      filters: [{ name: 'Text Files', extensions: ['txt'] }]
+    });
+    if (filePath) {
+      fs.writeFileSync(filePath, content, 'utf-8');
+      return { success: true };
+    }
+    return { success: false, cancelled: true };
+  } catch (e) {
+    console.error("IPC save-file error:", e);
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.handle('copy-to-clipboard', async (event, text) => {
+  try {
+    clipboard.writeText(text);
+    return { success: true };
+  } catch (e) {
+    console.error("IPC copy-to-clipboard error:", e);
+    return { success: false, error: e.message };
+  }
 });
