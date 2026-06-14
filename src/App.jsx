@@ -41,7 +41,8 @@ function App() {
   
   // Refs for managing streaming resources
   const socketRef = useRef(null);
-  const mediaRecorderRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const processorRef = useRef(null);
   const streamRef = useRef(null);
   const demoIntervalRef = useRef(null);
   const demoIndexRef = useRef(0);
@@ -179,23 +180,33 @@ function App() {
 
   // Cleanup all active resources
   const cleanupResources = () => {
-    // 1. Stop MediaRecorder
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+    // 1. Disconnect AudioContext processor nodes
+    if (processorRef.current) {
       try {
-        mediaRecorderRef.current.stop();
+        processorRef.current.disconnect();
       } catch (e) {
-        console.error("Error stopping media recorder:", e);
+        console.error("Error disconnecting processor:", e);
+      }
+      processorRef.current = null;
+    }
+
+    // 2. Close AudioContext
+    if (audioContextRef.current && audioContextRef.current.state !== 'closed') {
+      try {
+        audioContextRef.current.close();
+      } catch (e) {
+        console.error("Error closing AudioContext:", e);
       }
     }
-    mediaRecorderRef.current = null;
+    audioContextRef.current = null;
 
-    // 2. Stop microphone/desktop capture tracks
+    // 3. Stop microphone/desktop capture tracks
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
     }
 
-    // 3. Close Deepgram WebSocket
+    // 4. Close Deepgram WebSocket
     if (socketRef.current) {
       try {
         socketRef.current.close();
@@ -205,13 +216,13 @@ function App() {
       socketRef.current = null;
     }
 
-    // 4. Stop Demo Interval
+    // 5. Stop Demo Interval
     if (demoIntervalRef.current) {
       clearInterval(demoIntervalRef.current);
       demoIntervalRef.current = null;
     }
 
-    // 5. Clean up translation queue timers
+    // 6. Clean up translation queue timers
     if (translationTimeoutRef.current) {
       clearTimeout(translationTimeoutRef.current);
       translationTimeoutRef.current = null;
@@ -279,28 +290,42 @@ function App() {
 
       streamRef.current = stream;
 
-      // 2. Connect to Deepgram's streaming API via WebSocket
-      // Added language=en to lock the transcription model to English for maximum accuracy
-      const wsUrl = 'wss://api.deepgram.com/v1/listen?model=nova-2&language=en&smart_format=true&interim_results=true&endpointing=300';
+      // 2. Create AudioContext to capture raw PCM audio (much higher accuracy than MediaRecorder/webm)
+      const audioContext = new AudioContext({ sampleRate: 48000 });
+      audioContextRef.current = audioContext;
+      const source = audioContext.createMediaStreamSource(stream);
+
+      // ScriptProcessorNode captures raw Float32 PCM samples which we convert to Int16 for Deepgram
+      const processor = audioContext.createScriptProcessor(4096, 1, 1);
+      processorRef.current = processor;
+
+      // 3. Connect to Deepgram's streaming API via WebSocket
+      // encoding=linear16 tells Deepgram we are sending raw PCM Int16 audio
+      // endpointing=800 prevents sentence cutoff during fast speech (was 300ms, too aggressive)
+      // punctuate=true adds proper punctuation for cleaner output
+      const wsUrl = `wss://api.deepgram.com/v1/listen?model=nova-2&language=en&encoding=linear16&sample_rate=${audioContext.sampleRate}&channels=1&smart_format=true&punctuate=true&interim_results=true&endpointing=800`;
       const socket = new WebSocket(wsUrl, ['token', apiKey]);
       socketRef.current = socket;
 
       socket.onopen = () => {
-        console.log(`Connected to Deepgram successfully using ${audioSource === 'system' ? 'System Audio' : 'Microphone'}.`);
+        console.log(`Connected to Deepgram (PCM ${audioContext.sampleRate}Hz) using ${audioSource === 'system' ? 'System Audio' : 'Microphone'}.`);
         setIsListening(true);
 
-        // 3. Start recording audio and send chunks to Deepgram
-        const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-        mediaRecorderRef.current = mediaRecorder;
-
-        mediaRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
-            socket.send(event.data);
+        // 4. Stream raw PCM Int16 audio directly to Deepgram via WebSocket
+        processor.onaudioprocess = (e) => {
+          if (socket.readyState === WebSocket.OPEN) {
+            const float32 = e.inputBuffer.getChannelData(0);
+            const int16 = new Int16Array(float32.length);
+            for (let i = 0; i < float32.length; i++) {
+              const s = Math.max(-1, Math.min(1, float32[i]));
+              int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+            socket.send(int16.buffer);
           }
         };
 
-        // Capture and send audio slices every 100ms (reduces latency by 150ms)
-        mediaRecorder.start(100);
+        source.connect(processor);
+        processor.connect(audioContext.destination);
       };
 
       socket.onmessage = (event) => {
