@@ -51,6 +51,14 @@ function App() {
   // Refs for rolling display
   const currentEnRef = useRef('');
   const currentHiRef = useRef('');
+  const scrollContainerRef = useRef(null);
+
+  // Auto-scroll captions to bottom
+  useEffect(() => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    }
+  }, [englishText, hindiText, lastEnglishText, lastHindiText]);
 
   // Cleanup all active resources
   const cleanupResources = () => {
@@ -532,14 +540,14 @@ function App() {
       </div>
 
       {/* Captions Display */}
-      <div className="flex-grow p-4 flex flex-col justify-center gap-3 overflow-hidden select-none no-drag relative">
+      <div className="flex-grow p-4 flex flex-col overflow-hidden select-none no-drag relative">
         {(isListening || isDemoMode) && (
           <div className="absolute inset-0 bg-radial-gradient from-indigo-500/5 via-transparent to-transparent pointer-events-none animate-pulse"></div>
         )}
 
         {/* Error — small dismissible toast pinned to top of captions, with copy button */}
         {error && (
-          <div className="flex items-start gap-2 bg-red-950/70 border border-red-500/30 text-red-200 text-[10px] py-1.5 px-2.5 rounded-lg font-medium">
+          <div className="flex items-start gap-2 bg-red-950/70 border border-red-500/30 text-red-200 text-[10px] py-1.5 px-2.5 rounded-lg font-medium mb-2 shrink-0">
             <span className="shrink-0 mt-0.5">⚠️</span>
             <span className="flex-1 leading-relaxed select-text cursor-text">{error}</span>
             <div className="flex gap-1 shrink-0">
@@ -563,52 +571,58 @@ function App() {
           </div>
         )}
 
-        {(!englishText && !hindiText && !error) && (
-          <div className="flex flex-col items-center justify-center text-slate-500 text-center gap-2 py-4 animate-pulse">
-            <div className="flex gap-1 items-center justify-center">
-              <span className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-              <span className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-              <span className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+        {/* Scrollable captions wrapper (auto-scrolls to bottom) */}
+        <div
+          ref={scrollContainerRef}
+          className="flex-grow flex flex-col justify-end gap-3 overflow-y-auto no-scrollbar"
+        >
+          {(!englishText && !hindiText && !error) && (
+            <div className="flex flex-col items-center justify-center text-slate-500 text-center gap-2 py-4 animate-pulse">
+              <div className="flex gap-1 items-center justify-center">
+                <span className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                <span className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                <span className="w-1.5 h-1.5 bg-slate-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+              </div>
+              <span className="text-xs uppercase tracking-widest font-bold">
+                {isListening
+                  ? (audioSource === 'system' ? 'Gemini listening to speakers...' : 'Gemini listening to mic...')
+                  : isDemoMode ? 'Running demo...'
+                  : !apiKey ? "⚠️ Enter Gemini API key in ⚙️ Settings first"
+                  : "Ready — click 'Speech' or 'Demo'"}
+              </span>
             </div>
-            <span className="text-xs uppercase tracking-widest font-bold">
-              {isListening
-                ? (audioSource === 'system' ? 'Gemini listening to speakers...' : 'Gemini listening to mic...')
-                : isDemoMode ? 'Running demo...'
-                : !apiKey ? "⚠️ Enter Gemini API key in ⚙️ Settings first"
-                : "Ready — click 'Speech' or 'Demo'"}
-            </span>
-          </div>
-        )}
+          )}
 
-        {/* Rolling: Last finalized (dimmed top) */}
-        {lastEnglishText && (
-          <div className="flex flex-col gap-1 border-l-2 border-slate-500/20 pl-3 py-0.5 opacity-60 scale-[0.98] origin-left transition-all duration-300">
-            <div className={`${textClasses.finalEn} tracking-wide italic drop-shadow-sm`} style={{ fontFamily: "'Inter', sans-serif" }}>
-              "{lastEnglishText}"
+          {/* Rolling: Last finalized (dimmed top) */}
+          {lastEnglishText && (
+            <div className="flex flex-col gap-1 border-l-2 border-slate-500/20 pl-3 py-0.5 opacity-60 scale-[0.98] origin-left transition-all duration-300 shrink-0">
+              <div className={`${textClasses.finalEn} tracking-wide italic drop-shadow-sm`} style={{ fontFamily: "'Inter', sans-serif" }}>
+                "{lastEnglishText}"
+              </div>
+              {lastHindiText && (
+                <div className={`${textClasses.finalHi} leading-relaxed`} style={{ fontFamily: "'Mukta', sans-serif" }}>
+                  {lastHindiText}
+                </div>
+              )}
             </div>
-            {lastHindiText && (
-              <div className={`${textClasses.finalHi} leading-relaxed`} style={{ fontFamily: "'Mukta', sans-serif" }}>
-                {lastHindiText}
-              </div>
-            )}
-          </div>
-        )}
+          )}
 
-        {/* Rolling: Active current (bright bottom) */}
-        {(englishText || hindiText) && (
-          <div className="flex flex-col gap-1 border-l-2 border-indigo-400 pl-3 py-0.5 transition-all duration-300">
-            {englishText && (
-              <div className={`${textClasses.activeEn} tracking-wide italic drop-shadow-md line-clamp-2`} style={{ fontFamily: "'Inter', sans-serif" }}>
-                "{englishText}"
-              </div>
-            )}
-            {hindiText && (
-              <div className={`${textClasses.activeHi} leading-relaxed text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-400 drop-shadow-[0_2px_8px_rgba(251,191,36,0.3)]`} style={{ fontFamily: "'Mukta', sans-serif" }}>
-                {hindiText}
-              </div>
-            )}
-          </div>
-        )}
+          {/* Rolling: Active current (bright bottom) */}
+          {(englishText || hindiText) && (
+            <div className="flex flex-col gap-1 border-l-2 border-indigo-400 pl-3 py-0.5 transition-all duration-300 shrink-0">
+              {englishText && (
+                <div className={`${textClasses.activeEn} tracking-wide italic drop-shadow-md line-clamp-2`} style={{ fontFamily: "'Inter', sans-serif" }}>
+                  "{englishText}"
+                </div>
+              )}
+              {hindiText && (
+                <div className={`${textClasses.activeHi} leading-relaxed text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-400 drop-shadow-[0_2px_8px_rgba(251,191,36,0.3)]`} style={{ fontFamily: "'Mukta', sans-serif" }}>
+                  {hindiText}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Activity bar */}
