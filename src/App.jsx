@@ -160,20 +160,21 @@ function App() {
       socket.onopen = () => {
         console.log('Gemini Live Translate WebSocket connected.');
 
-        // 4. Send setup message to configure the session
+        // 4. Send CORRECT setup message for gemini-3.5-live-translate-preview
+        // IMPORTANT: This model does NOT support system_instruction or function calling
+        // Use translation_config with target_language_code instead
         const setupMsg = {
           setup: {
             model: `models/${GEMINI_MODEL}`,
             generation_config: {
               response_modalities: ['TEXT'],
             },
-            system_instruction: {
-              parts: [{
-                text: 'You are a real-time English to Hindi translator. The user will send audio. Transcribe what they say in English, then translate it to Hindi. Always respond in this exact JSON format: {"en": "<english transcript>", "hi": "<hindi translation>"}. Keep translations natural and conversational. Do not add any extra text outside the JSON.'
-              }]
+            translation_config: {
+              target_language_code: 'hi-IN',  // Hindi (India)
             }
           }
         };
+        console.log('Sending Gemini setup:', JSON.stringify(setupMsg));
         socket.send(JSON.stringify(setupMsg));
 
         // 5. Stream raw PCM16 audio chunks to Gemini
@@ -213,51 +214,48 @@ function App() {
         setIsListening(true);
       };
 
-      // 6. Handle incoming Gemini responses
-      let textBuffer = '';
+      // 6. Handle incoming Gemini Live Translate responses
+      // Live Translate model outputs:
+      //   msg.outputTranscription.text  → translated Hindi text (what we want to show)
+      //   msg.inputTranscription.text   → English source transcription
+      //   msg.serverContent.turnComplete → end of utterance
       socket.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data);
+          console.log('Gemini msg:', JSON.stringify(msg).substring(0, 300));
 
-          // Extract text parts from server response
+          // English source transcription (interim + final)
+          const inputText = msg?.inputTranscription?.text || '';
+          if (inputText.trim()) {
+            currentEnRef.current = inputText.trim();
+            setEnglishText(inputText.trim());
+          }
+
+          // Hindi translated output (this is what Gemini Live Translate provides)
+          const outputText = msg?.outputTranscription?.text || '';
+          if (outputText.trim()) {
+            currentHiRef.current = outputText.trim();
+            setHindiText(outputText.trim());
+          }
+
+          // Also check modelTurn parts (fallback for some response formats)
           const parts = msg?.serverContent?.modelTurn?.parts || [];
           for (const part of parts) {
-            if (part.text) {
-              textBuffer += part.text;
+            if (part.text && part.text.trim()) {
+              // If we got no output transcription, use model parts as Hindi
+              if (!outputText) {
+                currentHiRef.current = part.text.trim();
+                setHindiText(part.text.trim());
+              }
             }
           }
 
+          // Turn complete = finalize this sentence into history
           const isTurnComplete = msg?.serverContent?.turnComplete === true;
-
-          // Try to parse JSON from the buffer
-          const jsonMatch = textBuffer.match(/\{[\s\S]*?"en"[\s\S]*?"hi"[\s\S]*?\}/);
-          if (jsonMatch) {
-            try {
-              const parsed = JSON.parse(jsonMatch[0]);
-              const en = (parsed.en || '').trim();
-              const hi = (parsed.hi || '').trim();
-
-              if (en) {
-                currentEnRef.current = en;
-                setEnglishText(en);
-              }
-              if (hi) {
-                currentHiRef.current = hi;
-                setHindiText(hi);
-              }
-
-              if (isTurnComplete) {
-                textBuffer = '';
-                finalizeCurrentSentence();
-              }
-            } catch (_) {
-              // Partial JSON — wait for more
-            }
+          if (isTurnComplete) {
+            finalizeCurrentSentence();
           }
 
-          if (isTurnComplete && !jsonMatch) {
-            textBuffer = '';
-          }
         } catch (e) {
           console.error('Failed to parse Gemini message:', e);
         }
@@ -273,6 +271,11 @@ function App() {
       socket.onclose = (ev) => {
         console.log('Gemini WebSocket closed:', ev.code, ev.reason);
         setIsListening(false);
+        // Show error for unexpected closes (not user-initiated)
+        if (ev.code !== 1000 && ev.code !== 1001) {
+          const reason = ev.reason || `Code ${ev.code}`;
+          setError(`Gemini disconnected: ${reason}. Check API key in ⚙️ Settings.`);
+        }
       };
 
     } catch (err) {
