@@ -277,15 +277,41 @@ function App() {
 
           // Handle real-time audio transcriptions from Gemini Live API (accumulate word-by-word)
           const inputText = msg?.serverContent?.inputTranscription?.text || msg?.inputTranscription?.text || '';
-          if (inputText) {
-            currentEnRef.current = currentEnRef.current + inputText;
-            setEnglishText(currentEnRef.current.trim());
-          }
-
           const outputText = msg?.serverContent?.outputTranscription?.text || msg?.outputTranscription?.text || '';
-          if (outputText) {
-            currentHiRef.current = currentHiRef.current + outputText;
-            setHindiText(currentHiRef.current.trim());
+
+          if (translationDirection === 'hi-en') {
+            // Hindi Audio -> English Captions
+            // Input (source) is Hindi (goes to bottom). Output (target) is English (goes to top).
+            if (inputText) {
+              currentHiRef.current = currentHiRef.current + inputText;
+              setHindiText(currentHiRef.current.trim());
+            }
+            if (outputText) {
+              currentEnRef.current = currentEnRef.current + outputText;
+              setEnglishText(currentEnRef.current.trim());
+            }
+          } else {
+            // en-hi, en-en, hi-hi
+            // Input (source) maps to top for English, bottom for Hindi
+            if (inputText) {
+              if (translationDirection.startsWith('hi')) {
+                currentHiRef.current = currentHiRef.current + inputText;
+                setHindiText(currentHiRef.current.trim());
+              } else {
+                currentEnRef.current = currentEnRef.current + inputText;
+                setEnglishText(currentEnRef.current.trim());
+              }
+            }
+            // Output (target) maps to bottom for Hindi, top for English
+            if (outputText) {
+              if (translationDirection.endsWith('hi')) {
+                currentHiRef.current = currentHiRef.current + outputText;
+                setHindiText(currentHiRef.current.trim());
+              } else {
+                currentEnRef.current = currentEnRef.current + outputText;
+                setEnglishText(currentEnRef.current.trim());
+              }
+            }
           }
 
           // Turn complete → push to history
@@ -459,29 +485,29 @@ function App() {
   const getFontSizeClasses = () => {
     switch (fontSize) {
       case 'small':  return { 
-        activeSource: 'text-[12px] text-indigo-200 font-medium', 
-        activeTarget: 'text-[13px] font-bold text-yellow-400', 
-        finalSource: 'text-[11px] text-slate-400 font-light', 
-        finalTarget: 'text-[12px] font-semibold text-slate-300' 
+        activeEn: 'text-[10px] text-slate-400 font-normal', 
+        activeHi: 'text-[15px] font-bold text-yellow-400', 
+        finalEn: 'text-[9px] text-slate-500 font-light', 
+        finalHi: 'text-[12px] font-semibold text-slate-300' 
       };
       case 'large':  return { 
-        activeSource: 'text-[18px] text-indigo-200 font-medium', 
-        activeTarget: 'text-[20px] font-extrabold text-yellow-400', 
-        finalSource: 'text-[15px] text-slate-400 font-light', 
-        finalTarget: 'text-[17px] font-semibold text-slate-300' 
+        activeEn: 'text-[15px] text-slate-400 font-normal', 
+        activeHi: 'text-[26px] font-extrabold text-yellow-400', 
+        finalEn: 'text-[13px] text-slate-500 font-light', 
+        finalHi: 'text-[19px] font-semibold text-slate-300' 
       };
       case 'xl':     return { 
-        activeSource: 'text-[22px] text-indigo-200 font-medium', 
-        activeTarget: 'text-[24px] font-black text-yellow-400', 
-        finalSource: 'text-[18px] text-slate-400 font-light', 
-        finalTarget: 'text-[20px] font-semibold text-slate-300' 
+        activeEn: 'text-[18px] text-slate-400 font-normal', 
+        activeHi: 'text-[34px] font-black text-yellow-400', 
+        finalEn: 'text-[15px] text-slate-500 font-light', 
+        finalHi: 'text-[24px] font-semibold text-slate-300' 
       };
       default:       // medium
         return { 
-          activeSource: 'text-[15px] text-indigo-200 font-medium', 
-          activeTarget: 'text-[16px] font-extrabold text-yellow-400', 
-          finalSource: 'text-[13px] text-slate-400 font-light', 
-          finalTarget: 'text-[14px] font-semibold text-slate-300' 
+          activeEn: 'text-[12px] text-slate-400 font-normal', 
+          activeHi: 'text-[20px] font-extrabold text-yellow-400', 
+          finalEn: 'text-[11px] text-slate-500 font-light', 
+          finalHi: 'text-[15px] font-semibold text-slate-300' 
         };
     }
   };
@@ -649,11 +675,11 @@ function App() {
           {/* Rolling: Last finalized (dimmed top) */}
           {lastEnglishText && (
             <div className="flex flex-col gap-1 border-l-2 border-slate-500/20 pl-3 py-0.5 opacity-60 scale-[0.98] origin-left transition-all duration-300 shrink-0">
-              <div className={`${textClasses.finalSource} tracking-wide italic drop-shadow-sm`} style={{ fontFamily: "'Inter', sans-serif" }}>
+              <div className={`${textClasses.finalEn} tracking-wide italic drop-shadow-sm`} style={{ fontFamily: "'Inter', sans-serif" }}>
                 "{lastEnglishText}"
               </div>
               {lastHindiText && (
-                <div className={`${textClasses.finalTarget} leading-relaxed`} style={{ fontFamily: "'Mukta', sans-serif" }}>
+                <div className={`${textClasses.finalHi} leading-relaxed`} style={{ fontFamily: "'Mukta', sans-serif" }}>
                   {lastHindiText}
                 </div>
               )}
@@ -664,12 +690,12 @@ function App() {
           {(englishText || hindiText) && (
             <div className="flex flex-col gap-1 border-l-2 border-indigo-400 pl-3 py-0.5 transition-all duration-300 shrink-0">
               {englishText && (
-                <div className={`${textClasses.activeSource} tracking-wide italic drop-shadow-md`} style={{ fontFamily: "'Inter', sans-serif" }}>
+                <div className={`${textClasses.activeEn} tracking-wide italic drop-shadow-md`} style={{ fontFamily: "'Inter', sans-serif" }}>
                   "{englishText}"
                 </div>
               )}
               {hindiText && (
-                <div className={`${textClasses.activeTarget} leading-relaxed text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-400 drop-shadow-[0_2px_8px_rgba(251,191,36,0.3)]`} style={{ fontFamily: "'Mukta', sans-serif" }}>
+                <div className={`${textClasses.activeHi} leading-relaxed text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-400 drop-shadow-[0_2px_8px_rgba(251,191,36,0.3)]`} style={{ fontFamily: "'Mukta', sans-serif" }}>
                   {hindiText}
                 </div>
               )}
