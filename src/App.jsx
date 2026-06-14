@@ -191,9 +191,15 @@ function App() {
       };
 
       // 5. Handle all incoming Gemini messages
-      socket.onmessage = (event) => {
+      socket.onmessage = async (event) => {
         try {
-          const msg = JSON.parse(event.data);
+          let textData = '';
+          if (event.data instanceof Blob) {
+            textData = await event.data.text();
+          } else {
+            textData = event.data;
+          }
+          const msg = JSON.parse(textData);
           console.log('Gemini msg:', JSON.stringify(msg).substring(0, 400));
 
           // --- Wait for setupComplete before streaming audio ---
