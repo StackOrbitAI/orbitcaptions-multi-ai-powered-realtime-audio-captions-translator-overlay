@@ -279,10 +279,9 @@ function App() {
         };
 
         // Capture display audio stream
+        // NOTE: Do NOT stop video tracks — stopping them on a desktop capture stream
+        // also kills the audio track, making the entire stream silent.
         stream = await navigator.mediaDevices.getUserMedia(constraints);
-        
-        // Stop the video track immediately as we only want audio track (saves CPU/memory)
-        stream.getVideoTracks().forEach(track => track.stop());
       } else {
         // Capture physical microphone
         stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -324,8 +323,13 @@ function App() {
           }
         };
 
+        // Connect source → processor only (NOT to destination — avoids audio feedback loop)
         source.connect(processor);
-        processor.connect(audioContext.destination);
+        // processor must be connected to destination to fire onaudioprocess, but use a silent gain node
+        const silentGain = audioContext.createGain();
+        silentGain.gain.value = 0;
+        processor.connect(silentGain);
+        silentGain.connect(audioContext.destination);
       };
 
       socket.onmessage = (event) => {
