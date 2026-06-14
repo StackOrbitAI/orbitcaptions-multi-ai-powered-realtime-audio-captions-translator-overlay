@@ -39,6 +39,10 @@ function App() {
   const [tempApiKey, setTempApiKey] = useState(apiKey);
   const [activeTab, setActiveTab] = useState('config');
   const [logsCopied, setLogsCopied] = useState(false);
+  const [translationDirection, setTranslationDirection] = useState(() => {
+    return localStorage.getItem('translation_direction') || 'en-hi';
+  });
+  const [tempTranslationDirection, setTempTranslationDirection] = useState(translationDirection);
 
   // Refs for managing streaming resources
   const socketRef = useRef(null);
@@ -176,8 +180,33 @@ function App() {
         console.log('Gemini Live WebSocket connected (v1beta).');
 
         // 4. Send CORRECT setup for gemini-2.5-flash-native-audio-latest
-        // This model supports system_instruction — use it to instruct EN→HI transcription+translation
-        // No translation_config needed (that field only works in Python SDK, not raw WebSocket)
+        // Set up the system instruction and language codes dynamically based on the selected mode
+        let systemInstructionText = '';
+        let sourceLangCodes = ['en-US', 'en-IN'];
+        let targetLangCodes = ['hi-IN'];
+
+        switch (translationDirection) {
+          case 'hi-en':
+            systemInstructionText = 'You are a real-time Hindi to English interpreter. The user will stream live audio in Hindi. Translate everything they say into English and speak the translation. Be natural, conversational, and direct. Do not add any introductory or explanatory text.';
+            sourceLangCodes = ['hi-IN'];
+            targetLangCodes = ['en-US'];
+            break;
+          case 'en-en':
+            systemInstructionText = 'You are a real-time English transcriber. The user will stream live audio in English. Transcribe everything they say exactly in English and speak the transcription. Do not translate. Be natural, direct, and accurate. Do not add any introductory or explanatory text.';
+            sourceLangCodes = ['en-US', 'en-IN'];
+            targetLangCodes = ['en-US'];
+            break;
+          case 'hi-hi':
+            systemInstructionText = 'You are a real-time Hindi transcriber. The user will stream live audio in Hindi. Transcribe everything they say exactly in Hindi and speak the transcription. Do not translate. Be natural, direct, and accurate. Do not add any introductory or explanatory text.';
+            sourceLangCodes = ['hi-IN'];
+            targetLangCodes = ['hi-IN'];
+            break;
+          default: // en-hi
+            systemInstructionText = 'You are a real-time English to Hindi interpreter. The user will stream live audio in English. Translate everything they say into Hindi and speak the translation. Be natural, conversational, and direct. Do not add any introductory or explanatory text.';
+            sourceLangCodes = ['en-US', 'en-IN'];
+            targetLangCodes = ['hi-IN'];
+        }
+
         const setupMsg = {
           setup: {
             model: `models/${GEMINI_MODEL}`,
@@ -186,11 +215,15 @@ function App() {
             },
             system_instruction: {
               parts: [{
-                text: 'You are a real-time English to Hindi interpreter. The user will stream live audio in English. Translate everything they say into Hindi and speak the translation. Be natural, conversational, and direct. Do not add any introductory or explanatory text.'
+                text: systemInstructionText
               }]
             },
-            input_audio_transcription: {},
-            output_audio_transcription: {}
+            input_audio_transcription: {
+              language_codes: sourceLangCodes
+            },
+            output_audio_transcription: {
+              language_codes: targetLangCodes
+            }
           }
         };
         console.log('Sending Gemini setup:', JSON.stringify(setupMsg));
@@ -429,10 +462,31 @@ function App() {
   // Font size classes
   const getFontSizeClasses = () => {
     switch (fontSize) {
-      case 'small':  return { activeEn: 'text-[11px] text-indigo-200 font-medium', activeHi: 'text-[15px] font-bold text-yellow-400', finalEn: 'text-[10px] text-slate-400 font-light', finalHi: 'text-[13px] font-semibold text-slate-300' };
-      case 'large':  return { activeEn: 'text-[14px] text-indigo-200 font-medium', activeHi: 'text-[28px] font-extrabold text-yellow-400', finalEn: 'text-[12px] text-slate-400 font-light', finalHi: 'text-[20px] font-semibold text-slate-300' };
-      case 'xl':     return { activeEn: 'text-[16px] text-indigo-200 font-medium', activeHi: 'text-[36px] font-black text-yellow-400', finalEn: 'text-[14px] text-slate-400 font-light', finalHi: 'text-[26px] font-semibold text-slate-300' };
-      default:       return { activeEn: 'text-[12px] text-indigo-200 font-medium', activeHi: 'text-[22px] font-extrabold text-yellow-400', finalEn: 'text-[11px] text-slate-400 font-light', finalHi: 'text-[16px] font-semibold text-slate-300' };
+      case 'small':  return { 
+        activeSource: 'text-[12px] text-indigo-200 font-medium', 
+        activeTarget: 'text-[13px] font-bold text-yellow-400', 
+        finalSource: 'text-[11px] text-slate-400 font-light', 
+        finalTarget: 'text-[12px] font-semibold text-slate-300' 
+      };
+      case 'large':  return { 
+        activeSource: 'text-[18px] text-indigo-200 font-medium', 
+        activeTarget: 'text-[20px] font-extrabold text-yellow-400', 
+        finalSource: 'text-[15px] text-slate-400 font-light', 
+        finalTarget: 'text-[17px] font-semibold text-slate-300' 
+      };
+      case 'xl':     return { 
+        activeSource: 'text-[22px] text-indigo-200 font-medium', 
+        activeTarget: 'text-[24px] font-black text-yellow-400', 
+        finalSource: 'text-[18px] text-slate-400 font-light', 
+        finalTarget: 'text-[20px] font-semibold text-slate-300' 
+      };
+      default:       // medium
+        return { 
+          activeSource: 'text-[15px] text-indigo-200 font-medium', 
+          activeTarget: 'text-[16px] font-extrabold text-yellow-400', 
+          finalSource: 'text-[13px] text-slate-400 font-light', 
+          finalTarget: 'text-[14px] font-semibold text-slate-300' 
+        };
     }
   };
   const textClasses = getFontSizeClasses();
@@ -599,11 +653,11 @@ function App() {
           {/* Rolling: Last finalized (dimmed top) */}
           {lastEnglishText && (
             <div className="flex flex-col gap-1 border-l-2 border-slate-500/20 pl-3 py-0.5 opacity-60 scale-[0.98] origin-left transition-all duration-300 shrink-0">
-              <div className={`${textClasses.finalEn} tracking-wide italic drop-shadow-sm`} style={{ fontFamily: "'Inter', sans-serif" }}>
+              <div className={`${textClasses.finalSource} tracking-wide italic drop-shadow-sm`} style={{ fontFamily: "'Inter', sans-serif" }}>
                 "{lastEnglishText}"
               </div>
               {lastHindiText && (
-                <div className={`${textClasses.finalHi} leading-relaxed`} style={{ fontFamily: "'Mukta', sans-serif" }}>
+                <div className={`${textClasses.finalTarget} leading-relaxed`} style={{ fontFamily: "'Mukta', sans-serif" }}>
                   {lastHindiText}
                 </div>
               )}
@@ -614,12 +668,12 @@ function App() {
           {(englishText || hindiText) && (
             <div className="flex flex-col gap-1 border-l-2 border-indigo-400 pl-3 py-0.5 transition-all duration-300 shrink-0">
               {englishText && (
-                <div className={`${textClasses.activeEn} tracking-wide italic drop-shadow-md`} style={{ fontFamily: "'Inter', sans-serif" }}>
+                <div className={`${textClasses.activeSource} tracking-wide italic drop-shadow-md`} style={{ fontFamily: "'Inter', sans-serif" }}>
                   "{englishText}"
                 </div>
               )}
               {hindiText && (
-                <div className={`${textClasses.activeHi} leading-relaxed text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-400 drop-shadow-[0_2px_8px_rgba(251,191,36,0.3)]`} style={{ fontFamily: "'Mukta', sans-serif" }}>
+                <div className={`${textClasses.activeTarget} leading-relaxed text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-400 drop-shadow-[0_2px_8px_rgba(251,191,36,0.3)]`} style={{ fontFamily: "'Mukta', sans-serif" }}>
                   {hindiText}
                 </div>
               )}
@@ -665,9 +719,19 @@ function App() {
                   <span className="text-[9px] text-slate-500">
                     Get a free API key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-indigo-400 underline hover:text-indigo-300 no-drag">aistudio.google.com/apikey</a>
                   </span>
-                  <div className="mt-1 p-2 bg-blue-950/40 border border-blue-500/20 rounded-lg">
-                    <p className="text-[9px] text-blue-300 font-semibold">✨ Powered by Gemini 3.5 Live Translate</p>
-                    <p className="text-[8px] text-slate-400 mt-0.5">English audio → Hindi text in one step. No separate translation API needed.</p>
+
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1.5">Language Mode & Translation</label>
+                  <select value={tempTranslationDirection} onChange={(e) => setTempTranslationDirection(e.target.value)}
+                    className="bg-slate-900 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-full cursor-pointer">
+                    <option value="en-hi">English Audio ➔ Hindi Captions</option>
+                    <option value="hi-en">Hindi Audio ➔ English Captions</option>
+                    <option value="en-en">English Audio ➔ English Captions (No translation)</option>
+                    <option value="hi-hi">Hindi Audio ➔ Hindi Captions (No translation)</option>
+                  </select>
+
+                  <div className="mt-1.5 p-2 bg-blue-950/40 border border-blue-500/20 rounded-lg">
+                    <p className="text-[9px] text-blue-300 font-semibold">✨ Powered by Gemini Live ASR & NMT</p>
+                    <p className="text-[8px] text-slate-400 mt-0.5">Supports high-fidelity real-time transcription and direct context-aware translation.</p>
                   </div>
                 </div>
               ) : (
@@ -688,7 +752,11 @@ function App() {
 
           {activeTab === 'config' && (
             <div className="flex justify-end gap-2 border-t border-white/10 pt-2.5">
-              <button onClick={() => { setTempApiKey(apiKey); setIsSettingsOpen(false); }}
+              <button onClick={() => { 
+                setTempApiKey(apiKey); 
+                setTempTranslationDirection(translationDirection);
+                setIsSettingsOpen(false); 
+              }}
                 className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-white/5 transition-all">
                 Cancel
               </button>
@@ -700,6 +768,10 @@ function App() {
                 localStorage.setItem('gemini_api_key', cleanedKey);
                 setApiKey(cleanedKey);
                 setTempApiKey(cleanedKey);
+
+                localStorage.setItem('translation_direction', tempTranslationDirection);
+                setTranslationDirection(tempTranslationDirection);
+
                 setIsSettingsOpen(false);
                 setError('');
               }} className="px-4 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md transition-all">
