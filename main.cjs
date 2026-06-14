@@ -1,0 +1,86 @@
+const { app, BrowserWindow, ipcMain, session, desktopCapturer } = require('electron');
+const path = require('path');
+
+const isDev = process.env.NODE_ENV === 'development';
+
+function createWindow() {
+  const mainWindow = new BrowserWindow({
+    width: 800,
+    height: 180,
+    x: 300,
+    y: 300,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  // Make it float over everything, even fullscreen apps
+  mainWindow.setAlwaysOnTop(true, 'screen-saver');
+  mainWindow.center(); // Force the window to center on startup
+
+  // Load failure logging
+  mainWindow.webContents.on('did-fail-load', (event, errorCode, errorDescription, validatedURL) => {
+    console.error(`Failed to load URL: ${validatedURL}, Error Code: ${errorCode}, Description: ${errorDescription}`);
+    // If local dev server failed to respond immediately, retry after a second
+    if (isDev && validatedURL === 'http://localhost:5173/') {
+      console.log('Retrying connection to Dev Server in 1.5s...');
+      setTimeout(() => {
+        mainWindow.loadURL('http://localhost:5173/');
+      }, 1500);
+    }
+  });
+
+  // Render process logs forwarding
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    console.log(`[Browser Console] ${message} (${sourceId}:${line})`);
+  });
+
+  if (isDev) {
+    mainWindow.loadURL('http://localhost:5173');
+    // mainWindow.webContents.openDevTools({ mode: 'detach' }); // Removed to prevent dev pannel from opening by default
+  } else {
+    mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+  }
+}
+
+app.whenReady().then(() => {
+  // Automatically grant microphone permissions for the app
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (permission === 'media' || permission === 'display-capture') {
+      return callback(true);
+    }
+    callback(false);
+  });
+
+  createWindow();
+
+  app.on('activate', function () {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
+});
+
+app.on('window-all-closed', function () {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+ipcMain.on('close-app', () => {
+  app.quit();
+});
+
+ipcMain.handle('get-desktop-source-id', async () => {
+  try {
+    const sources = await desktopCapturer.getSources({ types: ['screen'] });
+    if (sources.length > 0) {
+      return sources[0].id;
+    }
+  } catch (e) {
+    console.error("Error getting desktop sources:", e);
+  }
+  return null;
+});
