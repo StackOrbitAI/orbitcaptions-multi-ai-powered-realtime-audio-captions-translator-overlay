@@ -20,6 +20,8 @@ function App() {
   const [isDemoMode, setIsDemoMode] = useState(false);
   const [englishText, setEnglishText] = useState('');
   const [hindiText, setHindiText] = useState('');
+  const [lastEnglishText, setLastEnglishText] = useState('');
+  const [lastHindiText, setLastHindiText] = useState('');
   const [error, setError] = useState('');
   
   // Customization States
@@ -77,17 +79,26 @@ function App() {
     try {
       const translated = await translateText(text);
       if (translated) {
-        setHindiText(translated);
-        lastTranslatedTextRef.current = text;
-
         if (isFinal) {
+          // Push finalized translation to the top rolling display
+          setLastEnglishText(text);
+          setLastHindiText(translated);
+          // Clear active display for new words
+          setEnglishText('');
+          setHindiText('');
+
           const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
           setTranscriptHistory(prev => {
             const exists = prev.some(item => item.en === text && item.time === timestamp);
             if (exists) return prev;
             return [...prev, { time: timestamp, en: text, hi: translated }];
           });
+        } else {
+          // Update the active real-time display
+          setEnglishText(text);
+          setHindiText(translated);
         }
+        lastTranslatedTextRef.current = text;
       }
     } catch (e) {
       console.error("Translation run error:", e);
@@ -207,6 +218,8 @@ function App() {
     pendingTranslationRef.current = null;
     isTranslatingRef.current = false;
     lastTranslatedTextRef.current = '';
+    setLastEnglishText('');
+    setLastHindiText('');
   };
 
   // Deepgram Live Speech-to-Text WebSocket Stream Setup
@@ -214,6 +227,8 @@ function App() {
     cleanupResources();
     setEnglishText('');
     setHindiText('');
+    setLastEnglishText('');
+    setLastHindiText('');
     setError('');
     setTranscriptHistory([]); // Reset history when starting fresh
 
@@ -232,12 +247,16 @@ function App() {
         }
 
         // Constraints for capturing desktop system audio in Electron
+        // Disables browser filters (echo cancellation/noise suppression) for clear loopback
         const constraints = {
           audio: {
             mandatory: {
               chromeMediaSource: 'desktop',
               chromeMediaSourceId: sourceId
-            }
+            },
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
           },
           video: {
             mandatory: {
@@ -260,7 +279,8 @@ function App() {
       streamRef.current = stream;
 
       // 2. Connect to Deepgram's streaming API via WebSocket
-      const wsUrl = 'wss://api.deepgram.com/v1/listen?model=nova-2&smart_format=true&interim_results=true&endpointing=300';
+      // Added language=en to lock the transcription model to English for maximum accuracy
+      const wsUrl = 'wss://api.deepgram.com/v1/listen?model=nova-2&language=en&smart_format=true&interim_results=true&endpointing=300';
       const socket = new WebSocket(wsUrl, ['token', apiKey]);
       socketRef.current = socket;
 
@@ -347,7 +367,20 @@ function App() {
 
       demoIndexRef.current = 0;
       const runDemoStep = () => {
-        const currentDialogue = DEMO_DIALOGUES[demoIndexRef.current];
+        const currentIndex = demoIndexRef.current;
+        const currentDialogue = DEMO_DIALOGUES[currentIndex];
+        
+        // Rolling display simulation: show the previous dialogue on top dimmed
+        const prevIndex = (currentIndex - 1 + DEMO_DIALOGUES.length) % DEMO_DIALOGUES.length;
+        if (currentIndex !== 0 || demoIndexRef.current > 0) {
+          const prevDialogue = DEMO_DIALOGUES[prevIndex];
+          setLastEnglishText(prevDialogue.en);
+          setLastHindiText(prevDialogue.hi);
+        } else {
+          setLastEnglishText('');
+          setLastHindiText('');
+        }
+
         setEnglishText(currentDialogue.en);
         setHindiText(currentDialogue.hi);
 
@@ -365,6 +398,8 @@ function App() {
         clearInterval(demoIntervalRef.current);
         setEnglishText('');
         setHindiText('');
+        setLastEnglishText('');
+        setLastHindiText('');
       }
     }
 
@@ -443,29 +478,37 @@ function App() {
     }
   };
 
-  // Font Size Classes Mapping
+  // Font Size Classes Mapping for Active and Finalized rolling layouts
   const getFontSizeClasses = () => {
     switch (fontSize) {
       case 'small':
         return {
-          en: 'text-xs md:text-sm text-slate-300 font-medium',
-          hi: 'text-lg md:text-xl font-bold text-yellow-400'
+          activeEn: 'text-[11px] text-indigo-200 font-medium',
+          activeHi: 'text-[15px] font-bold text-yellow-400',
+          finalEn: 'text-[10px] text-slate-400 font-light',
+          finalHi: 'text-[13px] font-semibold text-slate-300'
         };
       case 'large':
         return {
-          en: 'text-sm md:text-base text-slate-300 font-medium',
-          hi: 'text-3xl md:text-4xl font-extrabold text-yellow-400'
+          activeEn: 'text-[14px] text-indigo-200 font-medium',
+          activeHi: 'text-[28px] font-extrabold text-yellow-400',
+          finalEn: 'text-[12px] text-slate-400 font-light',
+          finalHi: 'text-[20px] font-semibold text-slate-300'
         };
       case 'xl':
         return {
-          en: 'text-base md:text-lg text-slate-300 font-medium',
-          hi: 'text-4xl md:text-5xl font-black text-yellow-400'
+          activeEn: 'text-[16px] text-indigo-200 font-medium',
+          activeHi: 'text-[36px] font-black text-yellow-400',
+          finalEn: 'text-[14px] text-slate-400 font-light',
+          finalHi: 'text-[26px] font-semibold text-slate-300'
         };
       case 'medium':
       default:
         return {
-          en: 'text-xs md:text-sm text-slate-300 font-medium',
-          hi: 'text-2xl md:text-3xl font-extrabold text-yellow-400'
+          activeEn: 'text-[12px] text-indigo-200 font-medium',
+          activeHi: 'text-[22px] font-extrabold text-yellow-400',
+          finalEn: 'text-[11px] text-slate-400 font-light',
+          finalHi: 'text-[16px] font-semibold text-slate-300'
         };
     }
   };
@@ -645,23 +688,39 @@ function App() {
           </div>
         )}
 
-        {/* English Text Panel */}
-        {englishText && (
-          <div 
-            className={`${textClasses.en} tracking-wide italic font-light drop-shadow-md text-slate-300 transition-all duration-300 border-l-2 border-indigo-400/40 pl-3 py-0.5 line-clamp-2`}
-            style={{ fontFamily: "'Inter', sans-serif" }}
-          >
-            "{englishText}"
+        {/* Rolling Layout: Last Finalized Caption (Dimmed on top) */}
+        {lastEnglishText && (
+          <div className="flex flex-col gap-1 border-l-2 border-slate-500/20 pl-3 py-0.5 opacity-60 scale-[0.98] origin-left transition-all duration-300 animate-fadeIn">
+            <div className={`${textClasses.finalEn} tracking-wide italic drop-shadow-sm`} style={{ fontFamily: "'Inter', sans-serif" }}>
+              "{lastEnglishText}"
+            </div>
+            {lastHindiText && (
+              <div className={`${textClasses.finalHi} leading-relaxed`} style={{ fontFamily: "'Mukta', sans-serif" }}>
+                {lastHindiText}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Hindi Text Panel */}
-        {hindiText && (
-          <div 
-            className={`${textClasses.hi} leading-relaxed transition-all duration-300 pl-3 text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-400 drop-shadow-[0_2px_8px_rgba(251,191,36,0.3)] animate-fadeIn`}
-            style={{ fontFamily: "'Mukta', sans-serif" }}
-          >
-            {hindiText}
+        {/* Rolling Layout: Current Active Caption (Bright at the bottom) */}
+        {(englishText || hindiText) && (
+          <div className="flex flex-col gap-1 border-l-2 border-indigo-400 pl-3 py-0.5 transition-all duration-300">
+            {englishText && (
+              <div 
+                className={`${textClasses.activeEn} tracking-wide italic drop-shadow-md line-clamp-2`}
+                style={{ fontFamily: "'Inter', sans-serif" }}
+              >
+                "{englishText}"
+              </div>
+            )}
+            {hindiText && (
+              <div 
+                className={`${textClasses.activeHi} leading-relaxed text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-400 drop-shadow-[0_2px_8px_rgba(251,191,36,0.3)]`}
+                style={{ fontFamily: "'Mukta', sans-serif" }}
+              >
+                {hindiText}
+              </div>
+            )}
           </div>
         )}
       </div>
