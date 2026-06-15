@@ -6,5 +6,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveFile: (content, filename) => ipcRenderer.invoke('save-file', { content, filename }),
   saveFileSilent: (content, filename) => ipcRenderer.invoke('save-file-silent', { content, filename }),
   setAlwaysOnTop: (flag) => ipcRenderer.send('set-always-on-top', flag),
+  resizeWindow: (width, height) => ipcRenderer.send('resize-window', { width, height }),
   copyToClipboard: (text) => ipcRenderer.invoke('copy-to-clipboard', text)
 });

@@ -1,5 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
 
+// Supported ASR & Translation Languages
+const SUPPORTED_LANGUAGES = {
+  en: 'English',
+  hi: 'Hindi',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  ja: 'Japanese',
+  zh: 'Chinese'
+};
+
 // Hardcoded Deepgram API Key for real-time speech capturing (STT)
 const DEEPGRAM_API_KEY = 'eab301b90ae1eb2fb73abce646c20d023b54e2d2';
 
@@ -60,10 +71,16 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('config');
   const [logsCopied, setLogsCopied] = useState(false);
-  const [translationDirection, setTranslationDirection] = useState(() => {
-    return localStorage.getItem('translation_direction') || 'en-hi';
+
+  const [sourceLang, setSourceLang] = useState(() => {
+    return localStorage.getItem('source_lang') || 'en';
   });
-  const [tempTranslationDirection, setTempTranslationDirection] = useState(translationDirection);
+  const [tempSourceLang, setTempSourceLang] = useState(sourceLang);
+
+  const [targetLang, setTargetLang] = useState(() => {
+    return localStorage.getItem('target_lang') || 'hi';
+  });
+  const [tempTargetLang, setTempTargetLang] = useState(targetLang);
 
   // Reconnection Logic
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
@@ -73,6 +90,21 @@ function App() {
   const showToast = (msg) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(''), 4000);
+  };
+
+  // Resize Window Helper
+  const handleOpenSettings = () => {
+    setIsSettingsOpen(true);
+    if (window.electronAPI?.resizeWindow) {
+      window.electronAPI.resizeWindow(800, 450);
+    }
+  };
+
+  const handleCloseSettings = () => {
+    setIsSettingsOpen(false);
+    if (window.electronAPI?.resizeWindow) {
+      window.electronAPI.resizeWindow(800, 180);
+    }
   };
 
   // Sync window always-on-top state on mount
@@ -101,9 +133,13 @@ function App() {
   const demoIntervalRef = useRef(null);
   const demoIndexRef = useRef(0);
 
-  // Ref so closures always read the latest translationDirection
-  const translationDirectionRef = useRef(translationDirection);
-  useEffect(() => { translationDirectionRef.current = translationDirection; }, [translationDirection]);
+  // Refs so closures always read the latest language states
+  const sourceLangRef = useRef(sourceLang);
+  const targetLangRef = useRef(targetLang);
+  useEffect(() => {
+    sourceLangRef.current = sourceLang;
+    targetLangRef.current = targetLang;
+  }, [sourceLang, targetLang]);
 
   // Translation via Free Google Translate API
   const translateTimerRef   = useRef(null);  // debounce timer (silence-based)
@@ -125,18 +161,17 @@ function App() {
   }, [englishText, hindiText, lastEnglishText, lastHindiText]);
 
   // translates sourceText → targetLang via free web Google Translate API (client=gtx)
-  const doRestTranslate = async (sourceText, targetLang) => {
+  const doRestTranslate = async (sourceText, fromLang, toLang) => {
     if (isTranslatingActiveRef.current) return;
     if (!sourceText || sourceText.trim() === lastTranslatedTextRef.current) return;
+    if (fromLang === toLang || toLang === 'none') return;
 
     isTranslatingActiveRef.current = true;
     try {
       const textToTranslate = sourceText.trim();
-      const sl = targetLang === 'hi' ? 'en' : 'hi';
-      const tl = targetLang;
-      console.log('[TRANSLATE →]', textToTranslate.substring(0, 60));
+      console.log(`[TRANSLATE →] (${fromLang} to ${toLang}):`, textToTranslate.substring(0, 60));
 
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(textToTranslate)}`;
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${fromLang}&tl=${toLang}&dt=t&q=${encodeURIComponent(textToTranslate)}`;
       const res = await fetch(url);
       if (!res.ok) {
         console.warn('[TRANSLATE] HTTP error:', res.status);
@@ -148,13 +183,8 @@ function App() {
 
       if (translated) {
         lastTranslatedTextRef.current = textToTranslate;
-        if (targetLang === 'hi') {
-          currentHiRef.current = translated;
-          setHindiText(translated);
-        } else {
-          currentEnRef.current = translated;
-          setEnglishText(translated);
-        }
+        currentHiRef.current = translated;
+        setHindiText(translated);
         setIsTranslating(false);
       }
     } catch (e) {
@@ -165,21 +195,20 @@ function App() {
   };
 
   // Schedule translation
-  const scheduleTranslation = (sourceText, targetLang) => {
+  const scheduleTranslation = (sourceText, fromLang, toLang) => {
+    if (toLang === 'none' || fromLang === toLang) return;
     if (translateTimerRef.current) clearTimeout(translateTimerRef.current);
     translateTimerRef.current = setTimeout(() => {
-      doRestTranslate(sourceText, targetLang);
+      doRestTranslate(sourceText, fromLang, toLang);
     }, 250);
 
     if (!translateIntervalRef.current) {
       translateIntervalRef.current = setInterval(() => {
-        const dir = translationDirectionRef.current;
-        const src = dir === 'en-hi' ? currentEnRef.current
-                  : dir === 'hi-en' ? currentHiRef.current
-                  : '';
-        const tgt = dir === 'en-hi' ? 'hi' : 'en';
-        if (src && src.trim() !== lastTranslatedTextRef.current) {
-          doRestTranslate(src.trim(), tgt);
+        const from = sourceLangRef.current;
+        const to = targetLangRef.current;
+        const src = currentEnRef.current;
+        if (src && src.trim() !== lastTranslatedTextRef.current && to !== 'none' && from !== to) {
+          doRestTranslate(src.trim(), from, to);
         }
       }, 800);
     }
@@ -221,7 +250,8 @@ function App() {
 
   // Finalize current sentence into the rolling display
   const finalizeCurrentSentence = async () => {
-    const dir = translationDirectionRef.current;
+    const from = sourceLangRef.current;
+    const to = targetLangRef.current;
     const en = currentEnRef.current.trim();
     const hi = currentHiRef.current.trim();
     const spk = currentSpeakerRef.current;
@@ -242,32 +272,16 @@ function App() {
       let finalHi = hi;
 
       // If translation is missing when finalized, perform a final translate
-      if (dir === 'en-hi' && en && !hi) {
+      if (to !== 'none' && from !== to && en && !hi) {
         try {
-          console.log('[FINAL TRANSLATE →]', en);
-          const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=hi&dt=t&q=${encodeURIComponent(en)}`;
+          console.log(`[FINAL TRANSLATE →] (${from} to ${to}):`, en);
+          const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${from}&tl=${to}&dt=t&q=${encodeURIComponent(en)}`;
           const res = await fetch(url);
           if (res.ok) {
             const data = await res.json();
             const translated = data?.[0]?.map(item => item[0]).join('') || '';
             if (translated) {
               finalHi = translated;
-              console.log('[FINAL TRANSLATE ←]', translated);
-            }
-          }
-        } catch (e) {
-          console.warn('[FINAL TRANSLATE] error:', e.message);
-        }
-      } else if (dir === 'hi-en' && hi && !en) {
-        try {
-          console.log('[FINAL TRANSLATE →]', hi);
-          const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=hi&tl=en&dt=t&q=${encodeURIComponent(hi)}`;
-          const res = await fetch(url);
-          if (res.ok) {
-            const data = await res.json();
-            const translated = data?.[0]?.map(item => item[0]).join('') || '';
-            if (translated) {
-              finalEn = translated;
               console.log('[FINAL TRANSLATE ←]', translated);
             }
           }
@@ -359,13 +373,13 @@ function App() {
       processorRef.current = processor;
 
       // 3. Open Deepgram Live WebSocket
-      const direction = translationDirectionRef.current;
-      const sourceLang = (direction === 'en-hi' || direction === 'en-en') ? 'en' : 'hi';
+      const sLang = sourceLangRef.current;
+      const tLang = targetLangRef.current;
 
       const kwParams = deepgramKeywords
         ? deepgramKeywords.split(',').map(k => k.trim()).filter(Boolean).map(k => `&keywords=${encodeURIComponent(k)}`).join('')
         : '';
-      const wsUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&model=nova-3&interim_results=true&smart_format=true&punctuate=true&diarize=true&diarize_model=latest&endpointing=300&language=${sourceLang}${kwParams}`;
+      const wsUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&model=nova-3&interim_results=true&smart_format=true&punctuate=true&diarize=true&diarize_model=latest&endpointing=300&language=${sLang}${kwParams}`;
       const socket = new WebSocket(wsUrl, ['token', key]);
       socketRef.current = socket;
 
@@ -429,7 +443,8 @@ function App() {
             currentSpeakerRef.current = spk;
           }
 
-          const direction = translationDirectionRef.current;
+          const from = sourceLangRef.current;
+          const to = targetLangRef.current;
 
           const appendChunk = (prev, chunk) => {
             if (!prev) return chunk;
@@ -438,43 +453,18 @@ function App() {
           };
 
           if (transcript) {
-            if (direction === 'en-hi') {
-              const activeText = appendChunk(currentEnRef.current, transcript);
-              if (!isFinal) {
-                setEnglishText(activeText);
+            const activeText = appendChunk(currentEnRef.current, transcript);
+            if (!isFinal) {
+              setEnglishText(activeText);
+              if (to !== 'none' && from !== to) {
                 setIsTranslating(true);
-                scheduleTranslation(activeText, 'hi');
-              } else {
-                currentEnRef.current = activeText;
-                setEnglishText(activeText);
-                scheduleTranslation(activeText, 'hi');
-              }
-            } else if (direction === 'hi-en') {
-              const activeText = appendChunk(currentHiRef.current, transcript);
-              if (!isFinal) {
-                setHindiText(activeText);
-                setIsTranslating(true);
-                scheduleTranslation(activeText, 'en');
-              } else {
-                currentHiRef.current = activeText;
-                setHindiText(activeText);
-                scheduleTranslation(activeText, 'en');
-              }
-            } else if (direction === 'hi-hi') {
-              const activeText = appendChunk(currentHiRef.current, transcript);
-              if (!isFinal) {
-                setHindiText(activeText);
-              } else {
-                currentHiRef.current = activeText;
-                setHindiText(activeText);
+                scheduleTranslation(activeText, from, to);
               }
             } else {
-              const activeText = appendChunk(currentEnRef.current, transcript);
-              if (!isFinal) {
-                setEnglishText(activeText);
-              } else {
-                currentEnRef.current = activeText;
-                setEnglishText(activeText);
+              currentEnRef.current = activeText;
+              setEnglishText(activeText);
+              if (to !== 'none' && from !== to) {
+                scheduleTranslation(activeText, from, to);
               }
             }
           }
@@ -648,7 +638,7 @@ function App() {
     }
     const content = transcriptHistory.map(item => {
       const spkLabel = item.speaker !== null && item.speaker !== undefined ? `[Speaker ${item.speaker}] ` : '';
-      return `[${item.time}]\n${spkLabel}English: "${item.en}"\n${spkLabel}Hindi:   "${item.hi}"\n`;
+      return `[${item.time}]\n${spkLabel}Source:      "${item.en}"\n${spkLabel}Translation: "${item.hi}"\n`;
     }).join('\n');
     const dateStr = new Date().toISOString().slice(0, 10);
     const filename = `OrbitCaptions_Transcript_${dateStr}.txt`;
@@ -674,12 +664,12 @@ function App() {
     return JSON.stringify({
       timestamp: new Date().toISOString(),
       error: error || 'None',
-      isListening, isDemoMode, audioSource, captionTheme,
+      isListening, isDemoMode, audioSource, captionTheme, sourceLang, targetLang,
       userAgent: navigator.userAgent,
-      activeEnglish: englishText || 'None',
-      activeHindi: hindiText || 'None',
+      activeSource: englishText || 'None',
+      activeTranslation: hindiText || 'None',
       historyCount: transcriptHistory.length,
-      history: transcriptHistory.map(i => `[${i.time}] Spk ${i.speaker}: EN: "${i.en}" | HI: "${i.hi}"`).join('\n')
+      history: transcriptHistory.map(i => `[${i.time}] Spk ${i.speaker}: SRC: "${i.en}" | TGT: "${i.hi}"`).join('\n')
     }, null, 2);
   };
 
@@ -756,8 +746,8 @@ function App() {
   };
   const themeClasses = getThemeClasses();
 
-  const showEnglish = translationDirection === 'hi-en' || translationDirection === 'en-en';
-  const showHindi = translationDirection === 'en-hi' || translationDirection === 'hi-hi';
+  const showEnglish = targetLang === 'none';
+  const showHindi = targetLang !== 'none';
 
   // Render Speaker Badge
   const renderSpeakerTag = (spkId) => {
@@ -885,7 +875,7 @@ function App() {
           </button>
 
           {/* Settings */}
-          <button onClick={() => setIsSettingsOpen(true)} className="text-slate-400 hover:text-white transition-colors p-1 hover:bg-white/5 rounded-md ml-1" title="Settings">
+          <button onClick={handleOpenSettings} className="text-slate-400 hover:text-white transition-colors p-1 hover:bg-white/5 rounded-md ml-1" title="Settings">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
           </button>
 
@@ -1030,7 +1020,7 @@ function App() {
                   📋 Session Logs
                 </button>
               </div>
-              <button onClick={() => { setIsSettingsOpen(false); }} className="text-slate-400 hover:text-white transition-colors">
+              <button onClick={handleCloseSettings} className="text-slate-400 hover:text-white transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
               </button>
             </div>
@@ -1039,15 +1029,26 @@ function App() {
             <div className="flex-grow overflow-y-auto pr-1">
               {activeTab === 'config' ? (
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 py-1 text-left">
-                  {/* Language Mode */}
+                  {/* Speaker Language */}
                   <div className="flex flex-col gap-1">
-                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Language Mode</label>
-                    <select value={tempTranslationDirection} onChange={(e) => setTempTranslationDirection(e.target.value)}
+                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Speaker Language (Audio)</label>
+                    <select value={tempSourceLang} onChange={(e) => setTempSourceLang(e.target.value)}
                       className="bg-slate-900 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-500 w-full cursor-pointer">
-                      <option value="en-hi">EN ➔ HI</option>
-                      <option value="hi-en">HI ➔ EN</option>
-                      <option value="en-en">EN ➔ EN</option>
-                      <option value="hi-hi">HI ➔ HI</option>
+                      {Object.entries(SUPPORTED_LANGUAGES).map(([code, name]) => (
+                        <option key={code} value={code}>{name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Translation Language */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Translation Language</label>
+                    <select value={tempTargetLang} onChange={(e) => setTempTargetLang(e.target.value)}
+                      className="bg-slate-900 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-500 w-full cursor-pointer">
+                      <option value="none">None (No Translation)</option>
+                      {Object.entries(SUPPORTED_LANGUAGES).map(([code, name]) => (
+                        <option key={code} value={code}>{name}</option>
+                      ))}
                     </select>
                   </div>
 
@@ -1064,8 +1065,25 @@ function App() {
                     </select>
                   </div>
 
-                  {/* Theme */}
+                  {/* Alignment */}
                   <div className="flex flex-col gap-1">
+                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Alignment</label>
+                    <div className="flex gap-1">
+                      {['left', 'center', 'right'].map((align) => (
+                        <button
+                          key={align}
+                          onClick={() => setTempCaptionAlignment(align)}
+                          className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border transition-all ${tempCaptionAlignment === align ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-900 text-slate-400 border-white/5 hover:bg-slate-800'}`}
+                          type="button"
+                        >
+                          {align}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Theme */}
+                  <div className="flex flex-col gap-1 bg-slate-950/20 col-span-2">
                     <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Caption Theme</label>
                     <div className="flex gap-1">
                       {['yellow', 'white', 'cyan'].map((t) => (
@@ -1079,23 +1097,6 @@ function App() {
                           type="button"
                         >
                           {t}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Alignment */}
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Alignment</label>
-                    <div className="flex gap-1">
-                      {['left', 'center', 'right'].map((align) => (
-                        <button
-                          key={align}
-                          onClick={() => setTempCaptionAlignment(align)}
-                          className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border transition-all ${tempCaptionAlignment === align ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-900 text-slate-400 border-white/5 hover:bg-slate-800'}`}
-                          type="button"
-                        >
-                          {align}
                         </button>
                       ))}
                     </div>
@@ -1146,19 +1147,23 @@ function App() {
           {activeTab === 'config' && (
             <div className="flex justify-end gap-2 border-t border-white/10 pt-2.5">
               <button onClick={() => { 
-                setTempTranslationDirection(translationDirection);
+                setTempSourceLang(sourceLang);
+                setTempTargetLang(targetLang);
                 setTempCaptionFont(captionFont);
                 setTempCaptionAlignment(captionAlignment);
                 setTempDeepgramKeywords(deepgramKeywords);
                 setTempAutoSaveEnabled(autoSaveEnabled);
-                setIsSettingsOpen(false); 
+                handleCloseSettings();
               }}
                 className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-white/5 transition-all">
                 Cancel
               </button>
               <button onClick={() => {
-                localStorage.setItem('translation_direction', tempTranslationDirection);
-                setTranslationDirection(tempTranslationDirection);
+                localStorage.setItem('source_lang', tempSourceLang);
+                setSourceLang(tempSourceLang);
+
+                localStorage.setItem('target_lang', tempTargetLang);
+                setTargetLang(tempTargetLang);
 
                 localStorage.setItem('caption_font', tempCaptionFont);
                 setCaptionFont(tempCaptionFont);
@@ -1172,7 +1177,7 @@ function App() {
                 localStorage.setItem('auto_save_enabled', String(tempAutoSaveEnabled));
                 setAutoSaveEnabled(tempAutoSaveEnabled);
 
-                setIsSettingsOpen(false);
+                handleCloseSettings();
                 setError('');
                 showToast("Configuration saved successfully!");
               }} className="px-4 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md transition-all">

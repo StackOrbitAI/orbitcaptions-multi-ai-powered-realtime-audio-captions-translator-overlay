@@ -131,6 +131,18 @@ ipcMain.on('set-always-on-top', (event, flag) => {
   }
 });
 
+ipcMain.on('resize-window', (event, { width, height }) => {
+  try {
+    const webContents = event.sender;
+    const win = BrowserWindow.fromWebContents(webContents);
+    if (win) {
+      win.setSize(width, height);
+    }
+  } catch (e) {
+    console.error("IPC resize-window error:", e);
+  }
+});
+
 ipcMain.handle('copy-to-clipboard', async (event, text) => {
   try {
     clipboard.writeText(text);

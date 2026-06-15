@@ -1,6 +1,6 @@
 # 🎙️ OrbitCaptions
 
-OrbitCaptions is a premium, lightweight, real-time speech capturing and translation desktop overlay built with **Electron**, **React**, and **Vite**. It floats seamlessly on top of video conferencing software (like Zoom, Google Meet, MS Teams) to translate English and Hindi audio streams into live captioned outputs.
+OrbitCaptions is a premium, lightweight, real-time speech capturing and translation desktop overlay built with **Electron**, **React**, and **Vite**. It floats seamlessly on top of video conferencing software (like Zoom, Google Meet, MS Teams) to translate and caption audio streams dynamically.
 
 Designed with user simplicity in mind, it operates completely **plug-and-play** (no Gemini or translation API keys required) using Deepgram's state-of-the-art ASR models and Google's public translate gateway.
 
@@ -8,28 +8,44 @@ Designed with user simplicity in mind, it operates completely **plug-and-play** 
 
 ## ✨ Premium Features
 
-### 🔇 1. Advanced Web Audio Noise Reduction
+### 🌍 1. Multi-Language Audio Capture & Real-Time Translation
+- Decoupled from static language pairs.
+- Supports live speech capture and translation across **7 global languages**:
+  - English (`en`)
+  - Hindi (`hi`)
+  - Spanish (`es`)
+  - French (`fr`)
+  - German (`de`)
+  - Japanese (`ja`)
+  - Chinese (`zh`)
+- Easily select Speaker Language (Audio) and Translation Language from the settings. Translation can also be set to "None" for single-language captioning.
+
+### 📐 2. Dynamic Window Resizing (IPC-driven)
+- Utilizes custom Electron IPC channels (`resize-window`) to resize the window dynamically.
+- Opening Settings automatically expands the overlay window to `800px x 450px`, showing all configuration options clearly.
+- Saving or Canceling settings cleanly shrinks the window back to its compact size (`800px x 180px`), keeping the overlay unobtrusive.
+
+### 🔇 3. Advanced Web Audio Noise Reduction
 - **Biquad Filters**: Integrated highpass and lowpass filters in the audio capture pipeline:
   - **Highpass filter (cuts below 100Hz)**: Filters out low-frequency environmental hums like AC units and fan noises.
   - **Lowpass filter (cuts above 4000Hz)**: Removes high-pitched static hiss and microphone feedback.
 - Captures clear voice streams for high-precision transcription.
 
-### 🎙️ 2. Speaker Diarization
+### 🎙️ 4. Speaker Diarization
 - Displays customized inline speaker tags (e.g., `🎙️ Spk 0`, `🎙️ Spk 1`) with unique background and border themes.
 - Differentiates speakers instantly, making it highly effective for multi-person remote meetings.
 
-### 🔁 3. Connection Resilience
+### 🔁 5. Connection Resilience
 - Automated retry logic utilizing an **exponential backoff reconnection loop**.
 - If your internet drops, the application automatically triggers reconnect attempts (1 to 5), scaling delays from `1.5s` up to `12s` to maintain stream stability.
 
-### 🎨 4. Custom Visual Themes
+### 🎨 6. Custom Visual Themes
 Choose between multiple vibrant text gradients:
 - **Yellow (Default)**: Bright amber glowing gradient.
 - **White**: Minimalist high-contrast layout.
 - **Cyan**: Neon cyber-cyan lighting drop shadow.
 
-### 🔤 5. Custom Font Styles
-- Fully compatible with typography settings.
+### 🔤 7. Custom Font Styles
 - Select from premium Google Fonts directly from the settings panel:
   - **Poppins**
   - **Outfit**
@@ -37,23 +53,22 @@ Choose between multiple vibrant text gradients:
   - **Inter**
   - **Mukta** (designed beautifully for Hindi/Devanagari script support)
 
-### 📏 6. Caption Layout Alignment
+### 📏 8. Caption Layout Alignment
 - Adjust caption rendering layouts with alignment selectors:
   - **Left**
   - **Center**
   - **Right** (aligns text and load progress indicators cleanly)
 
-### 📥 7. Silent Session Auto-Saving
+### 📥 9. Silent Session Auto-Saving
 - Automatically writes complete transcripts to `Documents/OrbitCaptions/` silently as soon as speech capture stops.
 - Files are named uniquely using date and time formatting (e.g., `OrbitCaptions_AutoSave_YYYY-MM-DD_HH-MM-SS.txt`).
 
-### 🚀 8. Keyword Boosting
+### 🚀 10. Keyword Boosting
 - Supply comma-separated custom vocabulary boosting arrays in the configuration panel.
 - Spoken brand names, acronyms, or specific tech terms (e.g., `OrbitCaptions`, `Deepgram`) are weighted heavily inside Deepgram's streaming vocabulary.
 
-### 📌 9. Dynamic Always-on-Top Floating
-- Quickly toggle pinning/unpinning the overlay window using the tiny push-pin button in the title region.
-- When active, the overlay floats securely over any active browser, presentation slides, or fullscreen application window.
+### 📌 11. Dynamic Always-on-Top Floating
+- Toggling the push-pin icon dynamically sets the Electron window always-on-top level, allowing the overlay to stay pinned or sink behind other apps.
 
 ---
 
