@@ -105,7 +105,7 @@ function App() {
 
   // Settings States
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState('config');
+  const [activeTab, setActiveTab] = useState('general');
   const [logsCopied, setLogsCopied] = useState(false);
   const [logSearchQuery, setLogSearchQuery] = useState('');
 
@@ -116,6 +116,67 @@ function App() {
   const [showQuickLangBar, setShowQuickLangBar] = useState(() => {
     return localStorage.getItem('show_quick_lang_bar') !== 'false';
   });
+
+  // LLM Translation & TTS States
+  const [translateProvider, setTranslateProvider] = useState(() => localStorage.getItem('translate_provider') || 'google');
+  const [geminiApiKey, setGeminiApiKey] = useState(() => localStorage.getItem('gemini_api_key') || '');
+  const [geminiModel, setGeminiModel] = useState(() => localStorage.getItem('gemini_model') || 'gemini-2.0-flash');
+  const [openaiApiKey, setOpenaiApiKey] = useState(() => localStorage.getItem('openai_api_key') || '');
+  const [openaiBaseUrl, setOpenaiBaseUrl] = useState(() => localStorage.getItem('openai_base_url') || 'https://api.openai.com/v1');
+  const [openaiModel, setOpenaiModel] = useState(() => localStorage.getItem('openai_model') || 'gpt-4o-mini');
+  const [deepseekApiKey, setDeepseekApiKey] = useState(() => localStorage.getItem('deepseek_api_key') || '');
+  const [deepseekBaseUrl, setDeepseekBaseUrl] = useState(() => localStorage.getItem('deepseek_base_url') || 'https://api.deepseek.com/v1');
+  const [deepseekModel, setDeepseekModel] = useState(() => localStorage.getItem('deepseek_model') || 'deepseek-chat');
+  const [customApiKey, setCustomApiKey] = useState(() => localStorage.getItem('custom_api_key') || '');
+  const [customBaseUrl, setCustomBaseUrl] = useState(() => localStorage.getItem('custom_base_url') || '');
+  const [customModel, setCustomModel] = useState(() => localStorage.getItem('custom_model') || '');
+  const [translateFinalOnly, setTranslateFinalOnly] = useState(() => localStorage.getItem('translate_final_only') !== 'false');
+  const [translationDebounce, setTranslationDebounce] = useState(() => parseInt(localStorage.getItem('translation_debounce')) || 250);
+
+  const [ttsEnabled, setTtsEnabled] = useState(() => localStorage.getItem('tts_enabled') === 'true');
+  const [ttsEngine, setTtsEngine] = useState(() => localStorage.getItem('tts_engine') || 'system');
+  const [googleTtsApiKey, setGoogleTtsApiKey] = useState(() => localStorage.getItem('google_tts_api_key') || '');
+  const [ttsRate, setTtsRate] = useState(() => parseFloat(localStorage.getItem('tts_rate')) || 1.0);
+  const [ttsVoiceName, setTtsVoiceName] = useState(() => localStorage.getItem('tts_voice_name') || '');
+  const [googleTtsVoiceName, setGoogleTtsVoiceName] = useState(() => localStorage.getItem('google_tts_voice_name') || 'auto');
+  const [availableVoices, setAvailableVoices] = useState([]);
+
+  // Temp Settings States
+  const [tempCaptionTheme, setTempCaptionTheme] = useState(captionTheme);
+  const [tempAppTheme, setTempAppTheme] = useState(appTheme);
+  const [tempTranslateProvider, setTempTranslateProvider] = useState(translateProvider);
+  const [tempGeminiApiKey, setTempGeminiApiKey] = useState(geminiApiKey);
+  const [tempGeminiModel, setTempGeminiModel] = useState(geminiModel);
+  const [tempOpenaiApiKey, setTempOpenaiApiKey] = useState(openaiApiKey);
+  const [tempOpenaiBaseUrl, setTempOpenaiBaseUrl] = useState(openaiBaseUrl);
+  const [tempOpenaiModel, setTempOpenaiModel] = useState(openaiModel);
+  const [tempDeepseekApiKey, setTempDeepseekApiKey] = useState(deepseekApiKey);
+  const [tempDeepseekBaseUrl, setTempDeepseekBaseUrl] = useState(deepseekBaseUrl);
+  const [tempDeepseekModel, setTempDeepseekModel] = useState(deepseekModel);
+  const [tempCustomApiKey, setTempCustomApiKey] = useState(customApiKey);
+  const [tempCustomBaseUrl, setTempCustomBaseUrl] = useState(customBaseUrl);
+  const [tempCustomModel, setTempCustomModel] = useState(customModel);
+  const [tempTranslateFinalOnly, setTempTranslateFinalOnly] = useState(translateFinalOnly);
+  const [tempTranslationDebounce, setTempTranslationDebounce] = useState(translationDebounce);
+
+  const [tempTtsEnabled, setTempTtsEnabled] = useState(ttsEnabled);
+  const [tempTtsEngine, setTempTtsEngine] = useState(ttsEngine);
+  const [tempGoogleTtsApiKey, setTempGoogleTtsApiKey] = useState(googleTtsApiKey);
+  const [tempTtsRate, setTempTtsRate] = useState(ttsRate);
+  const [tempTtsVoiceName, setTempTtsVoiceName] = useState(ttsVoiceName);
+  const [tempGoogleTtsVoiceName, setTempGoogleTtsVoiceName] = useState(googleTtsVoiceName);
+
+  useEffect(() => {
+    const updateVoices = () => {
+      if (typeof window !== 'undefined' && window.speechSynthesis) {
+        setAvailableVoices(window.speechSynthesis.getVoices());
+      }
+    };
+    updateVoices();
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      window.speechSynthesis.onvoiceschanged = updateVoices;
+    }
+  }, []);
 
   const [sourceLang, setSourceLang] = useState(() => {
     return localStorage.getItem('source_lang') || 'en';
@@ -158,10 +219,42 @@ function App() {
   };
 
   // Resize Window Helper
+  // Resize Window Helper
   const handleOpenSettings = () => {
+    setTempCaptionFont(captionFont);
+    setTempCaptionAlignment(captionAlignment);
+    setTempDeepgramKeywords(deepgramKeywords);
+    setTempAutoSaveEnabled(autoSaveEnabled);
+    setTempSourceLang(sourceLang);
+    setTempTargetLang(targetLang);
+
+    setTempCaptionTheme(captionTheme);
+    setTempAppTheme(appTheme);
+    setTempTranslateProvider(translateProvider);
+    setTempGeminiApiKey(geminiApiKey);
+    setTempGeminiModel(geminiModel);
+    setTempOpenaiApiKey(openaiApiKey);
+    setTempOpenaiBaseUrl(openaiBaseUrl);
+    setTempOpenaiModel(openaiModel);
+    setTempDeepseekApiKey(deepseekApiKey);
+    setTempDeepseekBaseUrl(deepseekBaseUrl);
+    setTempDeepseekModel(deepseekModel);
+    setTempCustomApiKey(customApiKey);
+    setTempCustomBaseUrl(customBaseUrl);
+    setTempCustomModel(customModel);
+    setTempTranslateFinalOnly(translateFinalOnly);
+    setTempTranslationDebounce(translationDebounce);
+    
+    setTempTtsEnabled(ttsEnabled);
+    setTempTtsEngine(ttsEngine);
+    setTempGoogleTtsApiKey(googleTtsApiKey);
+    setTempTtsRate(ttsRate);
+    setTempTtsVoiceName(ttsVoiceName);
+    setTempGoogleTtsVoiceName(googleTtsVoiceName);
+
     setIsSettingsOpen(true);
     if (window.electronAPI?.resizeWindow) {
-      window.electronAPI.resizeWindow(800, 450);
+      window.electronAPI.resizeWindow(800, 480);
     }
   };
 
@@ -204,10 +297,12 @@ function App() {
   // Refs so closures always read the latest language states
   const sourceLangRef = useRef(sourceLang);
   const targetLangRef = useRef(targetLang);
+  const translationDebounceRef = useRef(translationDebounce);
   useEffect(() => {
     sourceLangRef.current = sourceLang;
     targetLangRef.current = targetLang;
-  }, [sourceLang, targetLang]);
+    translationDebounceRef.current = translationDebounce;
+  }, [sourceLang, targetLang, translationDebounce]);
 
   // Translation via Free Google Translate API
   const translateTimerRef   = useRef(null);  // debounce timer (silence-based)
@@ -229,6 +324,222 @@ function App() {
   }, [englishText, hindiText, lastEnglishText, lastHindiText]);
 
   // translates sourceText → targetLang via free web Google Translate API (client=gtx)
+  // translates sourceText → targetLang via selected provider
+  const performTranslation = async (text, fromLang, toLang) => {
+    if (!text || text.trim() === '' || fromLang === toLang || toLang === 'none') return '';
+    const srcText = text.trim();
+
+    const fromLangName = SUPPORTED_LANGUAGES[fromLang] || fromLang;
+    const toLangName = SUPPORTED_LANGUAGES[toLang] || toLang;
+
+    try {
+      if (translateProvider === 'google') {
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${fromLang}&tl=${toLang}&dt=t&q=${encodeURIComponent(srcText)}`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          return data?.[0]?.map(item => item[0]).join('') || '';
+        }
+        throw new Error(`Google Translate HTTP status ${res.status}`);
+      }
+
+      if (translateProvider === 'gemini') {
+        if (!geminiApiKey) throw new Error('Gemini API Key is missing.');
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: `Translate the following text from ${fromLangName} to ${toLangName}. Output ONLY the direct translation, no explanations, no quotes, no extra text:\n\n${srcText}`
+              }]
+            }],
+            generationConfig: {
+              temperature: 0.2,
+              maxOutputTokens: 500,
+            }
+          })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          return data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+        }
+        const errData = await res.text();
+        throw new Error(`Gemini HTTP error ${res.status}: ${errData}`);
+      }
+
+      if (translateProvider === 'openai' || translateProvider === 'deepseek' || translateProvider === 'custom') {
+        let apiKey = '';
+        let baseURL = '';
+        let model = '';
+
+        if (translateProvider === 'openai') {
+          apiKey = openaiApiKey;
+          baseURL = openaiBaseUrl || 'https://api.openai.com/v1';
+          model = openaiModel || 'gpt-4o-mini';
+        } else if (translateProvider === 'deepseek') {
+          apiKey = deepseekApiKey;
+          baseURL = deepseekBaseUrl || 'https://api.deepseek.com/v1';
+          model = deepseekModel || 'deepseek-chat';
+        } else {
+          apiKey = customApiKey;
+          baseURL = customBaseUrl;
+          model = customModel;
+        }
+
+        if (!apiKey) throw new Error(`${translateProvider.toUpperCase()} API Key is missing.`);
+        if (!baseURL) throw new Error(`${translateProvider.toUpperCase()} Base URL is missing.`);
+        if (!model) throw new Error(`${translateProvider.toUpperCase()} Model name is missing.`);
+
+        const cleanBase = baseURL.endsWith('/') ? baseURL.slice(0, -1) : baseURL;
+        const res = await fetch(`${cleanBase}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: [
+              {
+                role: 'system',
+                content: `You are a precise translator. Translate from ${fromLangName} to ${toLangName}. Respond ONLY with the translation. No conversational text, no quotes.`
+              },
+              {
+                role: 'user',
+                content: srcText
+              }
+            ],
+            temperature: 0.2
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          return data?.choices?.[0]?.message?.content?.trim() || '';
+        }
+        const errData = await res.text();
+        throw new Error(`${translateProvider.toUpperCase()} HTTP error ${res.status}: ${errData}`);
+      }
+
+    } catch (err) {
+      console.error('[TRANSLATION ERROR]', err.message);
+      setError(`Translation Error (${translateProvider}): ${err.message}`);
+      setTimeout(() => setError(''), 6000);
+    }
+    return '';
+  };
+
+  const speakText = async (text, langCode) => {
+    if (!ttsEnabled || !text) return;
+
+    if (ttsEngine === 'system') {
+      if (typeof window === 'undefined' || !window.speechSynthesis) return;
+
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = ttsRate;
+
+      const voices = window.speechSynthesis.getVoices();
+      let selectedVoice = null;
+
+      if (ttsVoiceName) {
+        selectedVoice = voices.find(v => v.name === ttsVoiceName);
+      }
+
+      if (!selectedVoice) {
+        selectedVoice = voices.find(v => v.lang.toLowerCase().startsWith(langCode.toLowerCase())) ||
+                        voices.find(v => v.lang.toLowerCase().includes(langCode.toLowerCase()));
+      }
+
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      } else {
+        utterance.lang = langCode;
+      }
+
+      console.log(`[TTS SPEAK SYSTEM] (${langCode}):`, text.substring(0, 60), `Voice: ${selectedVoice?.name || 'Default'}`);
+      window.speechSynthesis.speak(utterance);
+    } else if (ttsEngine === 'google-cloud') {
+      if (!googleTtsApiKey) {
+        console.warn('[TTS SPEAK GC] API Key is missing.');
+        return;
+      }
+
+      // Map language code to Google Cloud language code + region
+      const langLocaleMap = {
+        en: 'en-US', hi: 'hi-IN', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', ja: 'ja-JP',
+        zh: 'zh-CN', pt: 'pt-BR', it: 'it-IT', ru: 'ru-RU', ko: 'ko-KR', nl: 'nl-NL',
+        tr: 'tr-TR', sv: 'sv-SE', id: 'id-ID', uk: 'uk-UA', ar: 'ar-XA', vi: 'vi-VN',
+        pl: 'pl-PL', fil: 'fil-PH', ta: 'ta-IN', te: 'te-IN', bn: 'bn-IN', kn: 'kn-IN',
+        ml: 'ml-IN', mr: 'mr-IN', gu: 'gu-IN', pa: 'pa-IN', ur: 'ur-PK', cs: 'cs-CZ',
+        da: 'da-DK', fi: 'fi-FI', el: 'el-GR', he: 'he-IL', hu: 'hu-HU', ms: 'ms-MY',
+        no: 'no-NO', ro: 'ro-RO', sk: 'sk-SK', th: 'th-TH'
+      };
+      const fullLocale = langLocaleMap[langCode.toLowerCase()] || langCode;
+
+      // Select voice name
+      let selectedVoiceName = googleTtsVoiceName;
+      if (!selectedVoiceName || selectedVoiceName === 'auto') {
+        const autoMap = {
+          en: 'en-US-Neural2-F', hi: 'hi-IN-Neural2-D', es: 'es-ES-Neural2-F',
+          fr: 'fr-FR-Neural2-A', de: 'de-DE-Neural2-F', ja: 'ja-JP-Neural2-B',
+          zh: 'zh-CN-Neural2-F', pt: 'pt-BR-Neural2-A', it: 'it-IT-Neural2-A',
+          ru: 'ru-RU-Wavenet-A', ko: 'ko-KR-Neural2-B', nl: 'nl-NL-Wavenet-A',
+          tr: 'tr-TR-Wavenet-A', sv: 'sv-SE-Wavenet-A', id: 'id-ID-Wavenet-A',
+          uk: 'uk-UA-Wavenet-A', ar: 'ar-XA-Wavenet-A', vi: 'vi-VN-Neural2-D',
+          pl: 'pl-PL-Wavenet-A', fil: 'fil-PH-Wavenet-A', ta: 'ta-IN-Wavenet-A',
+          te: 'te-IN-Wavenet-A', bn: 'bn-IN-Wavenet-A', kn: 'kn-IN-Wavenet-A',
+          ml: 'ml-IN-Wavenet-A', mr: 'mr-IN-Wavenet-A', gu: 'gu-IN-Wavenet-A',
+          pa: 'pa-IN-Wavenet-A', ur: 'ur-PK-Wavenet-A', cs: 'cs-CZ-Wavenet-A',
+          da: 'da-DK-Wavenet-A', fi: 'fi-FI-Wavenet-A', el: 'el-GR-Wavenet-A',
+          he: 'he-IL-Wavenet-A', hu: 'hu-HU-Wavenet-A', ms: 'ms-MY-Wavenet-A',
+          no: 'no-NO-Wavenet-A', ro: 'ro-RO-Wavenet-A', sk: 'sk-SK-Wavenet-A',
+          th: 'th-TH-Wavenet-A'
+        };
+        selectedVoiceName = autoMap[langCode.toLowerCase()] || `${fullLocale}-Wavenet-A`;
+      }
+
+      console.log(`[TTS SPEAK GC] (${fullLocale}):`, text.substring(0, 60), `Voice: ${selectedVoiceName}`);
+
+      try {
+        const url = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${googleTtsApiKey}`;
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            input: { text: text },
+            voice: { languageCode: fullLocale, name: selectedVoiceName },
+            audioConfig: {
+              audioEncoding: 'MP3',
+              speakingRate: ttsRate
+            }
+          })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          const audioContent = data.audioContent;
+          if (audioContent) {
+            const snd = new Audio(`data:audio/mp3;base64,${audioContent}`);
+            snd.play();
+          }
+        } else {
+          const errData = await res.text();
+          console.error('[TTS SPEAK GC ERROR]', res.status, errData);
+          setError(`Google TTS Error: Status ${res.status}`);
+          setTimeout(() => setError(''), 5000);
+        }
+      } catch (e) {
+        console.error('[TTS SPEAK GC FETCH ERROR]', e);
+        setError(`Google TTS Error: ${e.message}`);
+        setTimeout(() => setError(''), 5000);
+      }
+    }
+  };
+
   const doRestTranslate = async (sourceText, fromLang, toLang) => {
     if (isTranslatingActiveRef.current) return;
     if (!sourceText || sourceText.trim() === lastTranslatedTextRef.current) return;
@@ -237,38 +548,36 @@ function App() {
     isTranslatingActiveRef.current = true;
     try {
       const textToTranslate = sourceText.trim();
-      console.log(`[TRANSLATE →] (${fromLang} to ${toLang}):`, textToTranslate.substring(0, 60));
-
-      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${fromLang}&tl=${toLang}&dt=t&q=${encodeURIComponent(textToTranslate)}`;
-      const res = await fetch(url);
-      if (!res.ok) {
-        console.warn('[TRANSLATE] HTTP error:', res.status);
-        return;
-      }
-      const data = await res.json();
-      const translated = data?.[0]?.map(item => item[0]).join('') || '';
-      console.log('[TRANSLATE ←]', translated.substring(0, 60));
-
+      setIsTranslating(true);
+      const translated = await performTranslation(textToTranslate, fromLang, toLang);
+      
       if (translated) {
         lastTranslatedTextRef.current = textToTranslate;
         currentHiRef.current = translated;
         setHindiText(translated);
-        setIsTranslating(false);
       }
     } catch (e) {
       console.warn('[TRANSLATE] error:', e.message);
     } finally {
       isTranslatingActiveRef.current = false;
+      setIsTranslating(false);
     }
   };
 
   // Schedule translation
   const scheduleTranslation = (sourceText, fromLang, toLang) => {
     if (toLang === 'none' || fromLang === toLang) return;
+    
+    // Skip interim translation for LLM providers if translateFinalOnly is enabled
+    const isLLM = translateProvider !== 'google';
+    if (isLLM && translateFinalOnly) {
+      return;
+    }
+
     if (translateTimerRef.current) clearTimeout(translateTimerRef.current);
     translateTimerRef.current = setTimeout(() => {
       doRestTranslate(sourceText, fromLang, toLang);
-    }, 250);
+    }, translationDebounceRef.current);
 
     if (!translateIntervalRef.current) {
       translateIntervalRef.current = setInterval(() => {
@@ -278,7 +587,7 @@ function App() {
         if (src && src.trim() !== lastTranslatedTextRef.current && to !== 'none' && from !== to) {
           doRestTranslate(src.trim(), from, to);
         }
-      }, 800);
+      }, Math.max(500, translationDebounceRef.current * 3));
     }
   };
 
@@ -355,15 +664,10 @@ function App() {
       if (to !== 'none' && from !== to && en && !hi) {
         try {
           console.log(`[FINAL TRANSLATE →] (${from} to ${to}):`, en);
-          const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${from}&tl=${to}&dt=t&q=${encodeURIComponent(en)}`;
-          const res = await fetch(url);
-          if (res.ok) {
-            const data = await res.json();
-            const translated = data?.[0]?.map(item => item[0]).join('') || '';
-            if (translated) {
-              finalHi = translated;
-              console.log('[FINAL TRANSLATE ←]', translated);
-            }
+          const translated = await performTranslation(en, from, to);
+          if (translated) {
+            finalHi = translated;
+            console.log('[FINAL TRANSLATE ←]', translated);
           }
         } catch (e) {
           console.warn('[FINAL TRANSLATE] error:', e.message);
@@ -377,6 +681,11 @@ function App() {
       if (finalEn || finalHi) {
         const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
         setTranscriptHistory(prev => [...prev, { time: timestamp, en: finalEn, hi: finalHi, speaker: spk }]);
+
+        // Play translation audio via Google Web Speech Synthesis TTS
+        const textToSpeak = (to !== 'none' && from !== to) ? finalHi : finalEn;
+        const langToSpeak = (to !== 'none' && from !== to) ? to : from;
+        speakText(textToSpeak, langToSpeak);
       }
     }
   };
@@ -1373,19 +1682,25 @@ function App() {
 
       {/* Settings Modal */}
       {isSettingsOpen && (
-        <div className="absolute inset-0 bg-slate-950/98 backdrop-blur-md flex flex-col justify-between p-4 z-50 no-drag">
+        <div className="absolute inset-0 bg-slate-955/98 backdrop-blur-md flex flex-col justify-between p-4 z-50 no-drag">
           <div className="flex flex-col gap-3 h-full overflow-hidden">
             {/* Tabs */}
             <div className="flex justify-between items-center border-b border-white/10 pb-2 select-none">
               <div className="flex gap-3">
-                <button onClick={() => setActiveTab('config')}
-                  className={`text-xs font-bold uppercase tracking-wider pb-1 transition-all border-b-2 ${activeTab === 'config' ? 'text-indigo-300 border-indigo-500' : 'text-slate-400 border-transparent hover:text-slate-200'}`}>
-                  ⚙️ Settings
-                </button>
-                <button onClick={() => setActiveTab('logs')}
-                  className={`text-xs font-bold uppercase tracking-wider pb-1 transition-all border-b-2 ${activeTab === 'logs' ? 'text-indigo-300 border-indigo-500' : 'text-slate-400 border-transparent hover:text-slate-200'}`}>
-                  📋 Session Logs
-                </button>
+                {[
+                  { id: 'general', label: '⚙️ General' },
+                  { id: 'translation', label: '🌐 Translation' },
+                  { id: 'audio_tts', label: '🔊 Audio & TTS' },
+                  { id: 'logs', label: '📋 Session Logs' }
+                ].map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    className={`text-xs font-bold uppercase tracking-wider pb-1 transition-all border-b-2 ${activeTab === tab.id ? `${theme.tabActive}` : 'text-slate-400 border-transparent hover:text-slate-200'}`}
+                  >
+                    {tab.label}
+                  </button>
+                ))}
               </div>
               <button onClick={handleCloseSettings} className="text-slate-400 hover:text-white transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
@@ -1394,49 +1709,8 @@ function App() {
 
             {/* Body */}
             <div className="flex-grow overflow-y-auto pr-1">
-              {activeTab === 'config' ? (
+              {activeTab === 'general' && (
                 <div className="grid grid-cols-2 gap-x-4 gap-y-2 py-1 text-left">
-                  {/* Speaker Language */}
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Speaker Language (Audio)</label>
-                    <select value={tempSourceLang} onChange={(e) => setTempSourceLang(e.target.value)}
-                      className="bg-slate-900 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-500 w-full cursor-pointer">
-                      {Object.entries(SUPPORTED_LANGUAGES).map(([code, name]) => (
-                        <option key={code} value={code}>{name}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Translation Language */}
-                  <div className="flex flex-col gap-1">
-                    <div className="flex justify-between items-center">
-                      <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Translation Language</label>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const src = tempSourceLang;
-                          const tgt = tempTargetLang;
-                          if (tgt !== 'none') {
-                            setTempSourceLang(tgt);
-                            setTempTargetLang(src);
-                          }
-                        }}
-                        disabled={tempTargetLang === 'none'}
-                        className={`text-[9px] font-bold px-1.5 py-0.5 rounded transition-all uppercase tracking-wider border ${tempTargetLang === 'none' ? 'opacity-30 cursor-not-allowed border-white/5 text-slate-600' : 'bg-slate-900 text-indigo-300 border-indigo-500/30 hover:bg-slate-800'}`}
-                        title="Swap Speaker and Translation Languages"
-                      >
-                        ⇄ Swap
-                      </button>
-                    </div>
-                    <select value={tempTargetLang} onChange={(e) => setTempTargetLang(e.target.value)}
-                      className="bg-slate-900 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-500 w-full cursor-pointer">
-                      <option value="none">None (No Translation)</option>
-                      {Object.entries(SUPPORTED_LANGUAGES).map(([code, name]) => (
-                        <option key={code} value={code}>{name}</option>
-                      ))}
-                    </select>
-                  </div>
-
                   {/* Font Family */}
                   <div className="flex flex-col gap-1">
                     <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Font Family</label>
@@ -1458,7 +1732,7 @@ function App() {
                         <button
                           key={align}
                           onClick={() => setTempCaptionAlignment(align)}
-                          className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border transition-all ${tempCaptionAlignment === align ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-900 text-slate-400 border-white/5 hover:bg-slate-800'}`}
+                          className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border transition-all ${tempCaptionAlignment === align ? `${theme.accentBg} text-white border-transparent` : `${theme.btnSecondary}`}`}
                           type="button"
                         >
                           {align}
@@ -1479,11 +1753,8 @@ function App() {
                       ].map((t) => (
                         <button
                           key={t.id}
-                          onClick={() => {
-                            localStorage.setItem('caption_theme', t.id);
-                            setCaptionTheme(t.id);
-                          }}
-                          className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border transition-all ${captionTheme === t.id ? `${theme.accentBg} text-white border-transparent` : `${theme.btnSecondary}`}`}
+                          onClick={() => setTempCaptionTheme(t.id)}
+                          className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border transition-all ${tempCaptionTheme === t.id ? `${theme.accentBg} text-white border-transparent` : `${theme.btnSecondary}`}`}
                           type="button"
                         >
                           {t.name}
@@ -1507,11 +1778,8 @@ function App() {
                       ].map((t) => (
                         <button
                           key={t.id}
-                          onClick={() => {
-                            localStorage.setItem('app_theme', t.id);
-                            setAppTheme(t.id);
-                          }}
-                          className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border transition-all ${appTheme === t.id ? `${theme.accentBg} text-white border-transparent` : `${theme.btnSecondary}`}`}
+                          onClick={() => setTempAppTheme(t.id)}
+                          className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border transition-all ${tempAppTheme === t.id ? `${theme.accentBg} text-white border-transparent` : `${theme.btnSecondary}`}`}
                           type="button"
                         >
                           {t.name}
@@ -1536,7 +1804,7 @@ function App() {
                   <div className="col-span-2 flex items-center justify-between p-2 bg-slate-900/60 border border-white/5 rounded mt-1">
                     <div>
                       <p className="text-[10px] text-slate-300 font-semibold">Auto-Save Transcripts</p>
-                      <p className="text-[8px] text-slate-500">Saves transcript silently to Documents/OrbitCaptions when capture stops.</p>
+                      <p className="text-[8px] text-slate-500">Saves transcript silently to Documents/OrbitCaptions when speech capture stops.</p>
                     </div>
                     <input
                       type="checkbox"
@@ -1546,7 +1814,440 @@ function App() {
                     />
                   </div>
                 </div>
-              ) : (
+              )}
+
+              {activeTab === 'translation' && (
+                <div className="flex flex-col gap-3 text-left py-1">
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Speaker Language */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Speaker Language (Audio)</label>
+                      <select value={tempSourceLang} onChange={(e) => setTempSourceLang(e.target.value)}
+                        className="bg-slate-900 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-500 w-full cursor-pointer">
+                        {Object.entries(SUPPORTED_LANGUAGES).map(([code, name]) => (
+                          <option key={code} value={code}>{name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Translation Language */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Translation Language</label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const src = tempSourceLang;
+                            const tgt = tempTargetLang;
+                            if (tgt !== 'none') {
+                              setTempSourceLang(tgt);
+                              setTempTargetLang(src);
+                            }
+                          }}
+                          disabled={tempTargetLang === 'none'}
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded transition-all uppercase tracking-wider border ${tempTargetLang === 'none' ? 'opacity-30 cursor-not-allowed border-white/5 text-slate-600' : `${theme.btnSecondary}`}`}
+                          title="Swap Speaker and Translation Languages"
+                        >
+                          ⇄ Swap
+                        </button>
+                      </div>
+                      <select value={tempTargetLang} onChange={(e) => setTempTargetLang(e.target.value)}
+                        className="bg-slate-900 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-500 w-full cursor-pointer">
+                        <option value="none">None (No Translation)</option>
+                        {Object.entries(SUPPORTED_LANGUAGES).map(([code, name]) => (
+                          <option key={code} value={code}>{name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Translation Engine Provider */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Translation Service Provider</label>
+                    <select value={tempTranslateProvider} onChange={(e) => setTempTranslateProvider(e.target.value)}
+                      className="bg-slate-900 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-550 w-full cursor-pointer">
+                      <option value="google">Google Translate (Free & Unlimited)</option>
+                      <option value="gemini">Google Gemini AI API</option>
+                      <option value="openai">OpenAI GPT Models API</option>
+                      <option value="deepseek">DeepSeek AI API</option>
+                      <option value="custom">Custom OpenAI-Compatible (Ollama, Local hosting)</option>
+                    </select>
+                  </div>
+
+                  {/* Dynamic API Configuration Sub-Panels */}
+                  {tempTranslateProvider === 'gemini' && (
+                    <div className="grid grid-cols-2 gap-3 p-2.5 bg-slate-900/40 border border-white/5 rounded-lg">
+                      <div className="flex flex-col gap-1 col-span-2">
+                        <label className="text-[9px] text-amber-400 font-bold uppercase tracking-wider">Gemini API Key</label>
+                        <input type="password" value={tempGeminiApiKey} onChange={(e) => setTempGeminiApiKey(e.target.value)}
+                          placeholder="AIzaSy..." className="bg-slate-955 border border-white/10 rounded px-2.5 py-1 text-[11px] text-white focus:outline-none focus:border-amber-500 w-full" />
+                      </div>
+                      <div className="flex flex-col gap-1 col-span-2">
+                        <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Gemini Model Choice</label>
+                        <select 
+                          value={['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-pro-exp-02-05', 'gemini-1.5-flash', 'gemini-1.5-pro'].includes(tempGeminiModel) ? tempGeminiModel : 'custom'} 
+                          onChange={(e) => {
+                            if (e.target.value === 'custom') {
+                              setTempGeminiModel('gemini-2.0-flash-lite-preview-02-05');
+                            } else {
+                              setTempGeminiModel(e.target.value);
+                            }
+                          }}
+                          className="bg-slate-950 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none w-full cursor-pointer"
+                        >
+                          <option value="gemini-2.5-flash">gemini-2.5-flash (Latest Flash)</option>
+                          <option value="gemini-2.0-flash">gemini-2.0-flash (Recommended)</option>
+                          <option value="gemini-2.0-pro-exp-02-05">gemini-2.0-pro-exp-02-05 (Experimental Pro)</option>
+                          <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                          <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                          <option value="custom">Custom Model Name...</option>
+                        </select>
+                      </div>
+                      {!['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-2.0-pro-exp-02-05', 'gemini-1.5-flash', 'gemini-1.5-pro'].includes(tempGeminiModel) && (
+                        <div className="flex flex-col gap-1 col-span-2">
+                          <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Custom Gemini Model Name</label>
+                          <input 
+                            type="text" 
+                            value={tempGeminiModel} 
+                            onChange={(e) => setTempGeminiModel(e.target.value)} 
+                            placeholder="Enter custom Gemini model ID..." 
+                            className="bg-slate-950 border border-white/10 rounded px-2.5 py-1 text-[11px] text-white focus:outline-none w-full"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {tempTranslateProvider === 'openai' && (
+                    <div className="grid grid-cols-2 gap-3 p-2.5 bg-slate-900/40 border border-white/5 rounded-lg">
+                      <div className="flex flex-col gap-1 col-span-2">
+                        <label className="text-[9px] text-amber-400 font-bold uppercase tracking-wider">OpenAI API Key</label>
+                        <input type="password" value={tempOpenaiApiKey} onChange={(e) => setTempOpenaiApiKey(e.target.value)}
+                          placeholder="sk-proj-..." className="bg-slate-955 border border-white/10 rounded px-2.5 py-1 text-[11px] text-white focus:outline-none focus:border-amber-500 w-full" />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">OpenAI Base URL</label>
+                        <input type="text" value={tempOpenaiBaseUrl} onChange={(e) => setTempOpenaiBaseUrl(e.target.value)}
+                          placeholder="https://api.openai.com/v1" className="bg-slate-955 border border-white/10 rounded px-2.5 py-1 text-[11px] text-white focus:outline-none w-full" />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">OpenAI Model Choice</label>
+                        <select 
+                          value={['gpt-4o-mini', 'gpt-4o', 'o1-mini', 'o3-mini', 'gpt-4-turbo'].includes(tempOpenaiModel) ? tempOpenaiModel : 'custom'} 
+                          onChange={(e) => {
+                            if (e.target.value === 'custom') {
+                              setTempOpenaiModel('gpt-4');
+                            } else {
+                              setTempOpenaiModel(e.target.value);
+                            }
+                          }}
+                          className="bg-slate-955 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none w-full cursor-pointer"
+                        >
+                          <option value="gpt-4o-mini">gpt-4o-mini (Recommended)</option>
+                          <option value="gpt-4o">gpt-4o</option>
+                          <option value="o1-mini">o1-mini</option>
+                          <option value="o3-mini">o3-mini</option>
+                          <option value="gpt-4-turbo">gpt-4-turbo</option>
+                          <option value="custom">Custom Model Name...</option>
+                        </select>
+                      </div>
+                      {!['gpt-4o-mini', 'gpt-4o', 'o1-mini', 'o3-mini', 'gpt-4-turbo'].includes(tempOpenaiModel) && (
+                        <div className="flex flex-col gap-1 col-span-2">
+                          <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Custom OpenAI Model Name</label>
+                          <input 
+                            type="text" 
+                            value={tempOpenaiModel} 
+                            onChange={(e) => setTempOpenaiModel(e.target.value)} 
+                            placeholder="Enter custom OpenAI model ID..." 
+                            className="bg-slate-955 border border-white/10 rounded px-2.5 py-1 text-[11px] text-white focus:outline-none w-full"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {tempTranslateProvider === 'deepseek' && (
+                    <div className="grid grid-cols-2 gap-3 p-2.5 bg-slate-900/40 border border-white/5 rounded-lg">
+                      <div className="flex flex-col gap-1 col-span-2">
+                        <label className="text-[9px] text-amber-400 font-bold uppercase tracking-wider">DeepSeek API Key</label>
+                        <input type="password" value={tempDeepseekApiKey} onChange={(e) => setTempDeepseekApiKey(e.target.value)}
+                          placeholder="sk-..." className="bg-slate-955 border border-white/10 rounded px-2.5 py-1 text-[11px] text-white focus:outline-none focus:border-amber-500 w-full" />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">DeepSeek Base URL</label>
+                        <input type="text" value={tempDeepseekBaseUrl} onChange={(e) => setTempDeepseekBaseUrl(e.target.value)}
+                          placeholder="https://api.deepseek.com/v1" className="bg-slate-955 border border-white/10 rounded px-2.5 py-1 text-[11px] text-white focus:outline-none w-full" />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">DeepSeek Model Choice</label>
+                        <select 
+                          value={['deepseek-chat', 'deepseek-reasoner'].includes(tempDeepseekModel) ? tempDeepseekModel : 'custom'} 
+                          onChange={(e) => {
+                            if (e.target.value === 'custom') {
+                              setTempDeepseekModel('deepseek-coder');
+                            } else {
+                              setTempDeepseekModel(e.target.value);
+                            }
+                          }}
+                          className="bg-slate-955 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none w-full cursor-pointer"
+                        >
+                          <option value="deepseek-chat">deepseek-chat (Recommended)</option>
+                          <option value="deepseek-reasoner">deepseek-reasoner</option>
+                          <option value="custom">Custom Model Name...</option>
+                        </select>
+                      </div>
+                      {!['deepseek-chat', 'deepseek-reasoner'].includes(tempDeepseekModel) && (
+                        <div className="flex flex-col gap-1 col-span-2">
+                          <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Custom DeepSeek Model Name</label>
+                          <input 
+                            type="text" 
+                            value={tempDeepseekModel} 
+                            onChange={(e) => setTempDeepseekModel(e.target.value)} 
+                            placeholder="Enter custom DeepSeek model ID..." 
+                            className="bg-slate-955 border border-white/10 rounded px-2.5 py-1 text-[11px] text-white focus:outline-none w-full"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {tempTranslateProvider === 'custom' && (
+                    <div className="grid grid-cols-2 gap-3 p-2.5 bg-slate-900/40 border border-white/5 rounded-lg">
+                      <div className="flex flex-col gap-1 col-span-2">
+                        <label className="text-[9px] text-amber-400 font-bold uppercase tracking-wider">Custom API Key / Password</label>
+                        <input type="password" value={tempCustomApiKey} onChange={(e) => setTempCustomApiKey(e.target.value)}
+                          placeholder="Optional credentials..." className="bg-slate-955 border border-white/10 rounded px-2.5 py-1 text-[11px] text-white focus:outline-none focus:border-amber-500 w-full" />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Custom Endpoint Base URL</label>
+                        <input type="text" value={tempCustomBaseUrl} onChange={(e) => setTempCustomBaseUrl(e.target.value)}
+                          placeholder="e.g. http://localhost:11434/v1" className="bg-slate-955 border border-white/10 rounded px-2.5 py-1 text-[11px] text-white focus:outline-none w-full" />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Custom Model Name</label>
+                        <input type="text" value={tempCustomModel} onChange={(e) => setTempCustomModel(e.target.value)}
+                          placeholder="e.g. llama3, qwen2" className="bg-slate-955 border border-white/10 rounded px-2.5 py-1 text-[11px] text-white focus:outline-none w-full" />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Translation Speed/Delay Control */}
+                  <div className="flex flex-col gap-1.5 p-2 bg-slate-900/40 border border-white/5 rounded-lg mt-1">
+                    <div className="flex justify-between items-center select-none">
+                      <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Translation Real-Time Delay</label>
+                      <span className="text-[9px] text-indigo-300 font-bold font-mono">{tempTranslationDebounce}ms</span>
+                    </div>
+                    <input 
+                      type="range" 
+                      min="100" 
+                      max="1500" 
+                      step="50" 
+                      value={tempTranslationDebounce} 
+                      onChange={(e) => setTempTranslationDebounce(parseInt(e.target.value))}
+                      className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-400 focus:outline-none" 
+                    />
+                    <p className="text-[8px] text-slate-500">Lower values translate faster during speech. Higher values batch sentences to optimize API tokens.</p>
+                  </div>
+
+                  {/* LLM Optimization Toggles */}
+                  {tempTranslateProvider !== 'google' && (
+                    <div className="flex items-center justify-between p-2 bg-slate-900/60 border border-white/5 rounded mt-1">
+                      <div>
+                        <p className="text-[10px] text-slate-300 font-semibold">Translate Final Sentence Only (Recommended)</p>
+                        <p className="text-[8px] text-slate-500">Skips real-time interim results to optimize API cost, token consumption, and response lag.</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={tempTranslateFinalOnly}
+                        onChange={(e) => setTempTranslateFinalOnly(e.target.checked)}
+                        className="w-4 h-4 rounded border-white/10 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-950 bg-slate-900 cursor-pointer"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'audio_tts' && (
+                <div className="flex flex-col gap-4 text-left py-1">
+                  {/* Capture Source */}
+                  <div className="flex flex-col gap-1.5 p-2 bg-slate-900/60 border border-white/5 rounded-lg">
+                    <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Audio Capture Device Profile</span>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] text-slate-300 font-semibold">
+                          Active Target: {audioSource === 'system' ? '🔊 System Speakers' : '🎙️ Microphone Input'}
+                        </p>
+                        <p className="text-[8px] text-slate-500">Speakers captures other people speaking. Microphone captures your voice.</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setAudioSource(audioSource === 'system' ? 'mic' : 'system')}
+                        disabled={isListening}
+                        className={`px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-all border ${isListening ? 'opacity-40 cursor-not-allowed border-white/5 text-slate-500' : `${theme.accentBg} text-white border-transparent`}`}
+                      >
+                        Change to {audioSource === 'system' ? 'Mic' : 'Speakers'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Text-to-Speech Playback Toggle */}
+                  <div className="flex flex-col gap-2.5 p-2.5 bg-slate-900/60 border border-white/5 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[10px] text-slate-300 font-semibold">Enable Real-Time TTS Voice Translation</p>
+                        <p className="text-[8px] text-slate-500">Automatically speaks finalized translations or captions aloud using Google / local voices.</p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={tempTtsEnabled}
+                        onChange={(e) => setTempTtsEnabled(e.target.checked)}
+                        className="w-4 h-4 rounded border-white/10 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-950 bg-slate-900 cursor-pointer"
+                      />
+                    </div>
+
+                    {tempTtsEnabled && (
+                      <div className="flex flex-col gap-2.5 mt-1 border-t border-white/5 pt-2">
+                        <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">TTS Engine Provider</label>
+                        <select 
+                          value={tempTtsEngine} 
+                          onChange={(e) => setTempTtsEngine(e.target.value)}
+                          className="bg-slate-950 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none w-full cursor-pointer"
+                        >
+                          <option value="system">System Web Speech (Free & Local)</option>
+                          <option value="google-cloud">Google Cloud TTS API (Premium Wavenet / Neural2)</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Conditional TTS Settings */}
+                  {tempTtsEnabled && (
+                    <div className="flex flex-col gap-3 p-2.5 bg-slate-900/40 border border-white/5 rounded-lg">
+                      {/* System Web Speech Engine Settings */}
+                      {tempTtsEngine === 'system' && (
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Select Playback Voice Profile</label>
+                          {availableVoices.length === 0 ? (
+                            <div className="text-slate-500 text-[10px] italic">Loading system voices...</div>
+                          ) : (
+                            <select 
+                              value={tempTtsVoiceName} 
+                              onChange={(e) => setTempTtsVoiceName(e.target.value)}
+                              className="bg-slate-950 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none w-full cursor-pointer"
+                            >
+                              <option value="">Default Speech Voice</option>
+                              {availableVoices
+                                .filter(v => {
+                                  const targetL = tempTargetLang !== 'none' ? tempTargetLang : tempSourceLang;
+                                  return v.lang.toLowerCase().startsWith(targetL.toLowerCase()) || 
+                                         v.lang.toLowerCase().includes(targetL.toLowerCase());
+                                })
+                                .map((voice, idx) => (
+                                  <option key={idx} value={voice.name}>
+                                    {voice.name} ({voice.lang}) {voice.localService ? ' [Local]' : ''}
+                                  </option>
+                                ))
+                              }
+                            </select>
+                          )}
+                          <p className="text-[8px] text-slate-500">Filtered automatically to show voices compatible with target: <span className="font-bold text-indigo-400">{SUPPORTED_LANGUAGES[tempTargetLang !== 'none' ? tempTargetLang : tempSourceLang]}</span>.</p>
+                        </div>
+                      )}
+
+                      {/* Google Cloud TTS Engine Settings */}
+                      {tempTtsEngine === 'google-cloud' && (
+                        <div className="flex flex-col gap-3">
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[9px] text-amber-400 font-bold uppercase tracking-wider">Google Cloud API Key</label>
+                            <input 
+                              type="password" 
+                              value={tempGoogleTtsApiKey} 
+                              onChange={(e) => setTempGoogleTtsApiKey(e.target.value)}
+                              placeholder="Enter Google Cloud API credentials key..." 
+                              className="bg-slate-955 border border-white/10 rounded px-2.5 py-1 text-[11px] text-white focus:outline-none focus:border-amber-500 w-full"
+                            />
+                          </div>
+
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Google Cloud Voice Selection</label>
+                            <select 
+                              value={['auto', 'custom'].includes(tempGoogleTtsVoiceName) || tempGoogleTtsVoiceName.includes('-') ? (['auto', 'custom'].includes(tempGoogleTtsVoiceName) ? tempGoogleTtsVoiceName : 'predefined') : 'auto'} 
+                              onChange={(e) => {
+                                if (e.target.value === 'custom') {
+                                  setTempGoogleTtsVoiceName('en-US-Neural2-F');
+                                } else if (e.target.value === 'predefined') {
+                                  const targetL = tempTargetLang !== 'none' ? tempTargetLang : tempSourceLang;
+                                  if (targetL === 'hi') {
+                                    setTempGoogleTtsVoiceName('hi-IN-Neural2-D');
+                                  } else {
+                                    setTempGoogleTtsVoiceName('en-US-Neural2-F');
+                                  }
+                                } else {
+                                  setTempGoogleTtsVoiceName('auto');
+                                }
+                              }}
+                              className="bg-slate-950 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none w-full cursor-pointer"
+                            >
+                              <option value="auto">Auto-Select Best Premium Voice (Recommended)</option>
+                              {tempTargetLang === 'en' || (tempTargetLang === 'none' && tempSourceLang === 'en') ? (
+                                <>
+                                  <option value="en-US-Neural2-F">en-US-Neural2-F (Female, Neural)</option>
+                                  <option value="en-US-Neural2-D">en-US-Neural2-D (Male, Neural)</option>
+                                  <option value="en-US-Wavenet-C">en-US-Wavenet-C (Female, Wavenet)</option>
+                                  <option value="en-US-Wavenet-D">en-US-Wavenet-D (Male, Wavenet)</option>
+                                </>
+                              ) : null}
+                              {tempTargetLang === 'hi' || (tempTargetLang === 'none' && tempSourceLang === 'hi') ? (
+                                <>
+                                  <option value="hi-IN-Neural2-D">hi-IN-Neural2-D (Female, Neural)</option>
+                                  <option value="hi-IN-Neural2-C">hi-IN-Neural2-C (Male, Neural)</option>
+                                  <option value="hi-IN-Wavenet-D">hi-IN-Wavenet-D (Female, Wavenet)</option>
+                                  <option value="hi-IN-Wavenet-C">hi-IN-Wavenet-C (Male, Wavenet)</option>
+                                </>
+                              ) : null}
+                              <option value="predefined">Other Premium Locale Voice</option>
+                              <option value="custom">Custom Voice Name...</option>
+                            </select>
+                          </div>
+
+                          {tempGoogleTtsVoiceName !== 'auto' && (
+                            <div className="flex flex-col gap-1">
+                              <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Voice Name / Code</label>
+                              <input 
+                                type="text" 
+                                value={tempGoogleTtsVoiceName} 
+                                onChange={(e) => setTempGoogleTtsVoiceName(e.target.value)}
+                                placeholder="e.g. es-ES-Neural2-F" 
+                                className="bg-slate-950 border border-white/10 rounded px-2.5 py-1 text-[11px] text-white focus:outline-none w-full"
+                              />
+                              <p className="text-[8px] text-slate-500">Provide exact GC Voice Name (e.g. <code>fr-FR-Neural2-A</code>) for premium synthesized audio speech.</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Common Speech Rate */}
+                      <div className="flex flex-col gap-1">
+                        <div className="flex justify-between items-center select-none">
+                          <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Voice Speed / Rate</label>
+                          <span className="text-[9px] text-indigo-300 font-bold font-mono">{tempTtsRate}x</span>
+                        </div>
+                        <input 
+                          type="range" 
+                          min="0.5" 
+                          max="2.0" 
+                          step="0.1" 
+                          value={tempTtsRate} 
+                          onChange={(e) => setTempTtsRate(parseFloat(e.target.value))}
+                          className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-400 focus:outline-none" 
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'logs' && (
                 <div className="flex flex-col gap-2 h-full py-1 overflow-hidden text-left">
                   {/* Search and Action Bar */}
                   <div className="flex justify-between items-center gap-2 select-none">
@@ -1603,7 +2304,7 @@ function App() {
             </div>
           </div>
 
-          {activeTab === 'config' && (
+          {activeTab !== 'logs' && (
             <div className="flex justify-end gap-2 border-t border-white/10 pt-2.5">
               <button onClick={() => { 
                 setTempSourceLang(sourceLang);
@@ -1612,12 +2313,38 @@ function App() {
                 setTempCaptionAlignment(captionAlignment);
                 setTempDeepgramKeywords(deepgramKeywords);
                 setTempAutoSaveEnabled(autoSaveEnabled);
+                
+                setTempCaptionTheme(captionTheme);
+                setTempAppTheme(appTheme);
+                setTempTranslateProvider(translateProvider);
+                setTempGeminiApiKey(geminiApiKey);
+                setTempGeminiModel(geminiModel);
+                setTempOpenaiApiKey(openaiApiKey);
+                setTempOpenaiBaseUrl(openaiBaseUrl);
+                setTempOpenaiModel(openaiModel);
+                setTempDeepseekApiKey(deepseekApiKey);
+                setTempDeepseekBaseUrl(deepseekBaseUrl);
+                setTempDeepseekModel(deepseekModel);
+                setTempCustomApiKey(customApiKey);
+                setTempCustomBaseUrl(customBaseUrl);
+                setTempCustomModel(customModel);
+                setTempTranslateFinalOnly(translateFinalOnly);
+                setTempTranslationDebounce(translationDebounce);
+                
+                setTempTtsEnabled(ttsEnabled);
+                setTempTtsEngine(ttsEngine);
+                setTempGoogleTtsApiKey(googleTtsApiKey);
+                setTempTtsRate(ttsRate);
+                setTempTtsVoiceName(ttsVoiceName);
+                setTempGoogleTtsVoiceName(googleTtsVoiceName);
+
                 handleCloseSettings();
               }}
                 className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-white/5 transition-all">
                 Cancel
               </button>
               <button onClick={() => {
+                const isSourceLangChanged = sourceLang !== tempSourceLang;
                 localStorage.setItem('source_lang', tempSourceLang);
                 setSourceLang(tempSourceLang);
 
@@ -1636,9 +2363,66 @@ function App() {
                 localStorage.setItem('auto_save_enabled', String(tempAutoSaveEnabled));
                 setAutoSaveEnabled(tempAutoSaveEnabled);
 
+                localStorage.setItem('caption_theme', tempCaptionTheme);
+                setCaptionTheme(tempCaptionTheme);
+                localStorage.setItem('app_theme', tempAppTheme);
+                setAppTheme(tempAppTheme);
+                localStorage.setItem('translate_provider', tempTranslateProvider);
+                setTranslateProvider(tempTranslateProvider);
+
+                localStorage.setItem('gemini_api_key', tempGeminiApiKey);
+                setGeminiApiKey(tempGeminiApiKey);
+                localStorage.setItem('gemini_model', tempGeminiModel);
+                setGeminiModel(tempGeminiModel);
+
+                localStorage.setItem('openai_api_key', tempOpenaiApiKey);
+                setOpenaiApiKey(tempOpenaiApiKey);
+                localStorage.setItem('openai_base_url', tempOpenaiBaseUrl);
+                setOpenaiBaseUrl(tempOpenaiBaseUrl);
+                localStorage.setItem('openai_model', tempOpenaiModel);
+                setOpenaiModel(tempOpenaiModel);
+
+                localStorage.setItem('deepseek_api_key', tempDeepseekApiKey);
+                setDeepseekApiKey(tempDeepseekApiKey);
+                localStorage.setItem('deepseek_base_url', tempDeepseekBaseUrl);
+                setDeepseekBaseUrl(tempDeepseekBaseUrl);
+                localStorage.setItem('deepseek_model', tempDeepseekModel);
+                setDeepseekModel(tempDeepseekModel);
+
+                localStorage.setItem('custom_api_key', tempCustomApiKey);
+                setCustomApiKey(tempCustomApiKey);
+                localStorage.setItem('custom_base_url', tempCustomBaseUrl);
+                setCustomBaseUrl(tempCustomBaseUrl);
+                localStorage.setItem('custom_model', tempCustomModel);
+                setCustomModel(tempCustomModel);
+
+                localStorage.setItem('translate_final_only', String(tempTranslateFinalOnly));
+                setTranslateFinalOnly(tempTranslateFinalOnly);
+                localStorage.setItem('translation_debounce', String(tempTranslationDebounce));
+                setTranslationDebounce(tempTranslationDebounce);
+
+                localStorage.setItem('tts_enabled', String(tempTtsEnabled));
+                setTtsEnabled(tempTtsEnabled);
+                localStorage.setItem('tts_engine', tempTtsEngine);
+                setTtsEngine(tempTtsEngine);
+                localStorage.setItem('google_tts_api_key', tempGoogleTtsApiKey);
+                setGoogleTtsApiKey(tempGoogleTtsApiKey);
+                localStorage.setItem('tts_rate', String(tempTtsRate));
+                setTtsRate(tempTtsRate);
+                localStorage.setItem('tts_voice_name', tempTtsVoiceName);
+                setTtsVoiceName(tempTtsVoiceName);
+                localStorage.setItem('google_tts_voice_name', tempGoogleTtsVoiceName);
+                setGoogleTtsVoiceName(tempGoogleTtsVoiceName);
+
                 handleCloseSettings();
                 setError('');
                 showToast("Configuration saved successfully!");
+
+                if (isListening && isSourceLangChanged) {
+                  setTimeout(() => {
+                    startDeepgramStream();
+                  }, 100);
+                }
               }} className={`px-4 py-1.5 rounded-lg text-xs font-bold ${theme.accentBg} text-white shadow-md transition-all`}>
                 Save
               </button>
