@@ -47,8 +47,8 @@ const SUPPORTED_LANGUAGES = {
 const isRtl = (langCode) => ['ar', 'he', 'ur'].includes(langCode);
 const getLangDir = (langCode) => isRtl(langCode) ? 'rtl' : 'ltr';
 
-// Hardcoded Deepgram API Key for real-time speech capturing (STT)
-const DEEPGRAM_API_KEY = 'eab301b90ae1eb2fb73abce646c20d023b54e2d2';
+// Hardcoded Deepgram API Key removed for security. User must provide their own key in Settings.
+const DEEPGRAM_API_KEY = '';
 
 // Demo mode dialogues (English & Hindi)
 const DEMO_DIALOGUES = [
@@ -715,7 +715,7 @@ function App() {
 
     const key = deepgramApiKey || DEEPGRAM_API_KEY;
     if (!key) {
-      setError('Deepgram API key configuration error.');
+      setError('Deepgram API key is missing. Please add it in Settings.');
       return;
     }
 
@@ -2458,8 +2458,6 @@ function App() {
             </button>
           </div>
 
-        </div>
-      )}
         </div>
       )}
 
