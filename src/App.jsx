@@ -132,6 +132,8 @@ function App() {
   const [customModel, setCustomModel] = useState(() => localStorage.getItem('custom_model') || '');
   const [translateFinalOnly, setTranslateFinalOnly] = useState(() => localStorage.getItem('translate_final_only') !== 'false');
   const [translationDebounce, setTranslationDebounce] = useState(() => parseInt(localStorage.getItem('translation_debounce')) || 250);
+  const [deepgramApiKey, setDeepgramApiKey] = useState(() => localStorage.getItem('deepgram_api_key') || '');
+  const [deepgramModel, setDeepgramModel] = useState(() => localStorage.getItem('deepgram_model') || 'nova-3');
 
   const [ttsEnabled, setTtsEnabled] = useState(() => localStorage.getItem('tts_enabled') === 'true');
   const [ttsEngine, setTtsEngine] = useState(() => localStorage.getItem('tts_engine') || 'system');
@@ -158,6 +160,8 @@ function App() {
   const [tempCustomModel, setTempCustomModel] = useState(customModel);
   const [tempTranslateFinalOnly, setTempTranslateFinalOnly] = useState(translateFinalOnly);
   const [tempTranslationDebounce, setTempTranslationDebounce] = useState(translationDebounce);
+  const [tempDeepgramApiKey, setTempDeepgramApiKey] = useState(deepgramApiKey);
+  const [tempDeepgramModel, setTempDeepgramModel] = useState(deepgramModel);
 
   const [tempTtsEnabled, setTempTtsEnabled] = useState(ttsEnabled);
   const [tempTtsEngine, setTempTtsEngine] = useState(ttsEngine);
@@ -244,6 +248,8 @@ function App() {
     setTempCustomModel(customModel);
     setTempTranslateFinalOnly(translateFinalOnly);
     setTempTranslationDebounce(translationDebounce);
+    setTempDeepgramApiKey(deepgramApiKey);
+    setTempDeepgramModel(deepgramModel);
     
     setTempTtsEnabled(ttsEnabled);
     setTempTtsEngine(ttsEngine);
@@ -345,7 +351,11 @@ function App() {
 
       if (translateProvider === 'gemini') {
         if (!geminiApiKey) throw new Error('Gemini API Key is missing.');
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${geminiApiKey}`;
+        // Google Gemini API Model Guidance: Tuned models use the tunedModels/ prefix path, standard/experimental models use models/
+        const modelPath = geminiModel.startsWith('tunedModels/') || geminiModel.startsWith('models/') 
+          ? geminiModel 
+          : `models/${geminiModel}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/${modelPath}:generateContent?key=${geminiApiKey}`;
         const res = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -703,7 +713,7 @@ function App() {
     currentHiRef.current = '';
     currentSpeakerRef.current = null;
 
-    const key = DEEPGRAM_API_KEY;
+    const key = deepgramApiKey || DEEPGRAM_API_KEY;
     if (!key) {
       setError('Deepgram API key configuration error.');
       return;
@@ -768,7 +778,8 @@ function App() {
       const kwParams = deepgramKeywords
         ? deepgramKeywords.split(',').map(k => k.trim()).filter(Boolean).map(k => `&keywords=${encodeURIComponent(k)}`).join('')
         : '';
-      const wsUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&model=nova-3&interim_results=true&smart_format=true&punctuate=true&diarize=true&diarize_model=latest&endpointing=300&language=${sLang}${kwParams}`;
+      const modelParam = deepgramModel || 'nova-3';
+      const wsUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&model=${modelParam}&interim_results=true&smart_format=true&punctuate=true&diarize=true&diarize_model=latest&endpointing=300&language=${sLang}${kwParams}`;
       const socket = new WebSocket(wsUrl, ['token', key]);
       socketRef.current = socket;
 
@@ -2090,6 +2101,53 @@ function App() {
                     </div>
                   </div>
 
+                  {/* Speech-to-Text (STT) Engine Settings */}
+                  <div className="grid grid-cols-2 gap-3 p-2.5 bg-slate-900/60 border border-white/5 rounded-lg">
+                    <div className="flex flex-col gap-1 col-span-2">
+                      <label className="text-[9px] text-indigo-400 font-bold uppercase tracking-wider">Deepgram API Key (Optional)</label>
+                      <input 
+                        type="password" 
+                        value={tempDeepgramApiKey} 
+                        onChange={(e) => setTempDeepgramApiKey(e.target.value)}
+                        placeholder="Leave blank to use default built-in key..." 
+                        className="bg-slate-950 border border-white/10 rounded px-2.5 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-500 w-full"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1 col-span-2">
+                      <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Deepgram Caption Model Choice</label>
+                      <select 
+                        value={['nova-3', 'nova-2', 'nova-2-meeting', 'enhanced', 'base'].includes(tempDeepgramModel) ? tempDeepgramModel : 'custom'} 
+                        onChange={(e) => {
+                          if (e.target.value === 'custom') {
+                            setTempDeepgramModel('nova-2-phonecall');
+                          } else {
+                            setTempDeepgramModel(e.target.value);
+                          }
+                        }}
+                        className="bg-slate-955 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none w-full cursor-pointer"
+                      >
+                        <option value="nova-3">nova-3 (Default, Most Accurate)</option>
+                        <option value="nova-2">nova-2 (Standard General)</option>
+                        <option value="nova-2-meeting">nova-2-meeting (Meeting Optimized)</option>
+                        <option value="enhanced">enhanced (Conversational)</option>
+                        <option value="base">base (Low Latency Legacy)</option>
+                        <option value="custom">Custom STT Model Name...</option>
+                      </select>
+                    </div>
+                    {!['nova-3', 'nova-2', 'nova-2-meeting', 'enhanced', 'base'].includes(tempDeepgramModel) && (
+                      <div className="flex flex-col gap-1 col-span-2">
+                        <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Custom STT Model ID</label>
+                        <input 
+                          type="text" 
+                          value={tempDeepgramModel} 
+                          onChange={(e) => setTempDeepgramModel(e.target.value)} 
+                          placeholder="e.g. nova-2-finance" 
+                          className="bg-slate-950 border border-white/10 rounded px-2.5 py-1 text-[11px] text-white focus:outline-none w-full"
+                        />
+                      </div>
+                    )}
+                  </div>
+
                   {/* Text-to-Speech Playback Toggle */}
                   <div className="flex flex-col gap-2.5 p-2.5 bg-slate-900/60 border border-white/5 rounded-lg">
                     <div className="flex items-center justify-between">
@@ -2304,130 +2362,104 @@ function App() {
             </div>
           </div>
 
-          {activeTab !== 'logs' && (
-            <div className="flex justify-end gap-2 border-t border-white/10 pt-2.5">
-              <button onClick={() => { 
-                setTempSourceLang(sourceLang);
-                setTempTargetLang(targetLang);
-                setTempCaptionFont(captionFont);
-                setTempCaptionAlignment(captionAlignment);
-                setTempDeepgramKeywords(deepgramKeywords);
-                setTempAutoSaveEnabled(autoSaveEnabled);
-                
-                setTempCaptionTheme(captionTheme);
-                setTempAppTheme(appTheme);
-                setTempTranslateProvider(translateProvider);
-                setTempGeminiApiKey(geminiApiKey);
-                setTempGeminiModel(geminiModel);
-                setTempOpenaiApiKey(openaiApiKey);
-                setTempOpenaiBaseUrl(openaiBaseUrl);
-                setTempOpenaiModel(openaiModel);
-                setTempDeepseekApiKey(deepseekApiKey);
-                setTempDeepseekBaseUrl(deepseekBaseUrl);
-                setTempDeepseekModel(deepseekModel);
-                setTempCustomApiKey(customApiKey);
-                setTempCustomBaseUrl(customBaseUrl);
-                setTempCustomModel(customModel);
-                setTempTranslateFinalOnly(translateFinalOnly);
-                setTempTranslationDebounce(translationDebounce);
-                
-                setTempTtsEnabled(ttsEnabled);
-                setTempTtsEngine(ttsEngine);
-                setTempGoogleTtsApiKey(googleTtsApiKey);
-                setTempTtsRate(ttsRate);
-                setTempTtsVoiceName(ttsVoiceName);
-                setTempGoogleTtsVoiceName(googleTtsVoiceName);
-
-                handleCloseSettings();
-              }}
-                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-white/5 transition-all">
-                Cancel
-              </button>
-              <button onClick={() => {
-                const isSourceLangChanged = sourceLang !== tempSourceLang;
-                localStorage.setItem('source_lang', tempSourceLang);
-                setSourceLang(tempSourceLang);
-
-                localStorage.setItem('target_lang', tempTargetLang);
-                setTargetLang(tempTargetLang);
+          {/* Settings Modal Footer Actions */}
+          <div className="flex justify-end items-center gap-3 border-t border-white/10 pt-3 mt-1 select-none shrink-0">
+            <button
+              type="button"
+              onClick={handleCloseSettings}
+              className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider border transition-all ${theme.btnSecondary}`}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const needsRestart = 
+                  deepgramApiKey !== tempDeepgramApiKey ||
+                  deepgramModel !== tempDeepgramModel ||
+                  deepgramKeywords !== tempDeepgramKeywords ||
+                  sourceLang !== tempSourceLang ||
+                  targetLang !== tempTargetLang;
 
                 localStorage.setItem('caption_font', tempCaptionFont);
-                setCaptionFont(tempCaptionFont);
-
                 localStorage.setItem('caption_alignment', tempCaptionAlignment);
-                setCaptionAlignment(tempCaptionAlignment);
-
-                localStorage.setItem('deepgram_keywords', tempDeepgramKeywords);
-                setDeepgramKeywords(tempDeepgramKeywords);
-
-                localStorage.setItem('auto_save_enabled', String(tempAutoSaveEnabled));
-                setAutoSaveEnabled(tempAutoSaveEnabled);
-
                 localStorage.setItem('caption_theme', tempCaptionTheme);
-                setCaptionTheme(tempCaptionTheme);
                 localStorage.setItem('app_theme', tempAppTheme);
-                setAppTheme(tempAppTheme);
                 localStorage.setItem('translate_provider', tempTranslateProvider);
-                setTranslateProvider(tempTranslateProvider);
-
                 localStorage.setItem('gemini_api_key', tempGeminiApiKey);
-                setGeminiApiKey(tempGeminiApiKey);
                 localStorage.setItem('gemini_model', tempGeminiModel);
-                setGeminiModel(tempGeminiModel);
-
                 localStorage.setItem('openai_api_key', tempOpenaiApiKey);
-                setOpenaiApiKey(tempOpenaiApiKey);
                 localStorage.setItem('openai_base_url', tempOpenaiBaseUrl);
-                setOpenaiBaseUrl(tempOpenaiBaseUrl);
                 localStorage.setItem('openai_model', tempOpenaiModel);
-                setOpenaiModel(tempOpenaiModel);
-
                 localStorage.setItem('deepseek_api_key', tempDeepseekApiKey);
-                setDeepseekApiKey(tempDeepseekApiKey);
                 localStorage.setItem('deepseek_base_url', tempDeepseekBaseUrl);
-                setDeepseekBaseUrl(tempDeepseekBaseUrl);
                 localStorage.setItem('deepseek_model', tempDeepseekModel);
-                setDeepseekModel(tempDeepseekModel);
-
                 localStorage.setItem('custom_api_key', tempCustomApiKey);
-                setCustomApiKey(tempCustomApiKey);
                 localStorage.setItem('custom_base_url', tempCustomBaseUrl);
-                setCustomBaseUrl(tempCustomBaseUrl);
                 localStorage.setItem('custom_model', tempCustomModel);
-                setCustomModel(tempCustomModel);
-
                 localStorage.setItem('translate_final_only', String(tempTranslateFinalOnly));
-                setTranslateFinalOnly(tempTranslateFinalOnly);
                 localStorage.setItem('translation_debounce', String(tempTranslationDebounce));
-                setTranslationDebounce(tempTranslationDebounce);
-
+                localStorage.setItem('deepgram_api_key', tempDeepgramApiKey);
+                localStorage.setItem('deepgram_model', tempDeepgramModel);
                 localStorage.setItem('tts_enabled', String(tempTtsEnabled));
-                setTtsEnabled(tempTtsEnabled);
                 localStorage.setItem('tts_engine', tempTtsEngine);
-                setTtsEngine(tempTtsEngine);
                 localStorage.setItem('google_tts_api_key', tempGoogleTtsApiKey);
-                setGoogleTtsApiKey(tempGoogleTtsApiKey);
                 localStorage.setItem('tts_rate', String(tempTtsRate));
-                setTtsRate(tempTtsRate);
                 localStorage.setItem('tts_voice_name', tempTtsVoiceName);
-                setTtsVoiceName(tempTtsVoiceName);
                 localStorage.setItem('google_tts_voice_name', tempGoogleTtsVoiceName);
+                localStorage.setItem('deepgram_keywords', tempDeepgramKeywords);
+                localStorage.setItem('auto_save_enabled', String(tempAutoSaveEnabled));
+                localStorage.setItem('source_lang', tempSourceLang);
+                localStorage.setItem('target_lang', tempTargetLang);
+
+                setCaptionFont(tempCaptionFont);
+                setCaptionAlignment(tempCaptionAlignment);
+                setCaptionTheme(tempCaptionTheme);
+                setAppTheme(tempAppTheme);
+                setTranslateProvider(tempTranslateProvider);
+                setGeminiApiKey(tempGeminiApiKey);
+                setGeminiModel(tempGeminiModel);
+                setOpenaiApiKey(tempOpenaiApiKey);
+                setOpenaiBaseUrl(tempOpenaiBaseUrl);
+                setOpenaiModel(tempOpenaiModel);
+                setDeepseekApiKey(tempDeepseekApiKey);
+                setDeepseekBaseUrl(tempDeepseekBaseUrl);
+                setDeepseekModel(tempDeepseekModel);
+                setCustomApiKey(tempCustomApiKey);
+                setCustomBaseUrl(tempCustomBaseUrl);
+                setCustomModel(tempCustomModel);
+                setTranslateFinalOnly(tempTranslateFinalOnly);
+                setTranslationDebounce(tempTranslationDebounce);
+                setDeepgramApiKey(tempDeepgramApiKey);
+                setDeepgramModel(tempDeepgramModel);
+                setTtsEnabled(tempTtsEnabled);
+                setTtsEngine(tempTtsEngine);
+                setGoogleTtsApiKey(tempGoogleTtsApiKey);
+                setTtsRate(tempTtsRate);
+                setTtsVoiceName(tempTtsVoiceName);
                 setGoogleTtsVoiceName(tempGoogleTtsVoiceName);
+                setDeepgramKeywords(tempDeepgramKeywords);
+                setAutoSaveEnabled(tempAutoSaveEnabled);
+                setSourceLang(tempSourceLang);
+                setTargetLang(tempTargetLang);
 
                 handleCloseSettings();
-                setError('');
-                showToast("Configuration saved successfully!");
+                showToast('Settings saved successfully!');
 
-                if (isListening && isSourceLangChanged) {
+                if (isListening && needsRestart) {
                   setTimeout(() => {
                     startDeepgramStream();
-                  }, 100);
+                  }, 200);
                 }
-              }} className={`px-4 py-1.5 rounded-lg text-xs font-bold ${theme.accentBg} text-white shadow-md transition-all`}>
-                Save
-              </button>
-            </div>
-          )}
+              }}
+              className={`px-5 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider text-white shadow-lg transition-all ${theme.accentBg}`}
+            >
+              Save Settings
+            </button>
+          </div>
+
+        </div>
+      )}
         </div>
       )}
 

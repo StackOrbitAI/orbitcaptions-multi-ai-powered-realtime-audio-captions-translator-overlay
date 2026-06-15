@@ -1,4 +1,4 @@
-# 🎙️ OrbitAI-Captions
+# 🎙️ Orbit-LiveCaptions AI Meeting Translator
 
 OrbitAI-Captions is a high-performance, real-time desktop speech capture, transcription, and translation overlay application. Built with **Electron**, **React**, and **Vite**, it is designed to float seamlessly over online meeting software (like Zoom, Google Meet, Microsoft Teams, Webex, Discord) and media playback platforms (like YouTube, Facebook, or local video players).
 
@@ -69,8 +69,8 @@ Make sure you have [Node.js](https://nodejs.org) (v18+ recommended) installed.
 ### Installation
 1. Clone the repository and enter the directory:
    ```bash
-   git clone https://github.com/StackOrbitAI/OrbitAI-Captions.git
-   cd OrbitAI-Captions
+   git clone https://github.com/StackOrbitAI/Orbit-LiveCaptions-AI-Meeting-Translator.git
+   cd Orbit-LiveCaptions-AI-Meeting-Translator
    ```
 2. Install dependencies:
    ```bash
@@ -96,3 +96,11 @@ The compiled output, portable binaries, and installers will be saved in the `./d
 ## 🔒 Security & API Key Policies
 *   All keys (Deepgram, Gemini, OpenAI, DeepSeek, Google Cloud TTS) are stored safely inside the local desktop browser sandboxed `localStorage`.
 *   Credentials are sent directly to the respective AI provider endpoints and never pass through any third-party middle-man servers.
+
+---
+
+## 💖 Support & Donations (Domain Help & Company Operations)
+If you find this project helpful, please consider supporting us:
+*   **PayPal**: [Your PayPal Link]
+*   **Crypto (Litecoin/LTC)**: `Your LTC Wallet Address`
+*   **Binance Pay**: `Your Binance ID/Pay Link`
