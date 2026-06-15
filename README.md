@@ -99,8 +99,17 @@ The compiled output, portable binaries, and installers will be saved in the `./d
 
 ---
 
-## 💖 Support & Donations (Domain Help & Company Operations)
-If you find this project helpful, please consider supporting us:
-*   **PayPal**: [Your PayPal Link]
-*   **Crypto (Litecoin/LTC)**: `Your LTC Wallet Address`
-*   **Binance Pay**: `Your Binance ID/Pay Link`
+## ☕ Support & Donations
+If you found our work helpful, consider supporting us!
+
+💳 **PayPal**
+*   **Donation Link**: [paypal.me/khan1899](https://paypal.me/khan1899)
+
+🔶 **Binance Pay (100% Free / No Network Fees)**
+*   **Pay ID**: `538454480`
+*   **Username**: `Mohdakeel1899`
+*   **Name for Verification**: `Mohd Akeel`
+
+🪙 **Crypto Wallet (LTC / Litecoin)**
+*   **LTC Address**: `LaJGvzQJGmqfCFkP9cY1kjLp6hphECxWS2`
+*   **Network**: Litecoin (LTC) Network (use this for lowest fees)
