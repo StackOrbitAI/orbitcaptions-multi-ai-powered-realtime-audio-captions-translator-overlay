@@ -106,7 +106,7 @@ ipcMain.handle('save-file', async (event, { content, filename }) => {
 ipcMain.handle('save-file-silent', async (event, { content, filename }) => {
   try {
     const docsPath = app.getPath('documents');
-    const orbitCaptionsDir = path.join(docsPath, 'OrbitCaptions');
+    const orbitCaptionsDir = path.join(docsPath, 'OrbitAI-Captions');
     if (!fs.existsSync(orbitCaptionsDir)) {
       fs.mkdirSync(orbitCaptionsDir, { recursive: true });
     }

@@ -52,7 +52,7 @@ const DEEPGRAM_API_KEY = 'eab301b90ae1eb2fb73abce646c20d023b54e2d2';
 
 // Demo mode dialogues (English & Hindi)
 const DEMO_DIALOGUES = [
-  { en: "Hello everyone, welcome to the OrbitCaptions showcase.", hi: "हैलो एवरीवन, ऑर्बिटकैप्शन शोकेस में आप सभी का स्वागत है।" },
+  { en: "Hello everyone, welcome to the OrbitAI-Captions showcase.", hi: "हैलो एवरीवन, ऑर्बिटकैप्शन शोकेस में आप सभी का स्वागत है।" },
   { en: "This desktop app is built with Electron and React.", hi: "यह डेस्कटॉप ऐप इलेक्ट्रॉन और रिएक्ट के साथ बनाया गया है।" },
   { en: "It floats seamlessly on top of Zoom, MS Teams, or Google Meet.", hi: "यह ज़ूम, एमएस टीम्स या गूगल मीट के ऊपर आसानी से तैरता रहता है।" },
   { en: "You can drag it anywhere on the screen using the top handle.", hi: "आप शीर्ष हैंडल का उपयोग करके इसे स्क्रीन पर कहीं भी खींच सकते हैं।" },
@@ -956,12 +956,12 @@ function App() {
         }).join('\n');
         const dateStr = new Date().toISOString().slice(0, 10);
         const timeStr = new Date().toTimeString().slice(0, 8).replace(/:/g, '-');
-        const filename = `OrbitCaptions_AutoSave_${dateStr}_${timeStr}.txt`;
+        const filename = `OrbitAI-Captions_AutoSave_${dateStr}_${timeStr}.txt`;
         
         if (window.electronAPI?.saveFileSilent) {
           const result = await window.electronAPI.saveFileSilent(content, filename);
           if (result?.success) {
-            showToast(`Transcript auto-saved to Documents/OrbitCaptions`);
+            showToast(`Transcript auto-saved to Documents/OrbitAI-Captions`);
           } else {
             console.error("Auto-save failed:", result?.error);
           }
@@ -1071,7 +1071,7 @@ function App() {
       return `[${item.time}]\n${spkLabel}Source:      "${item.en}"\n${spkLabel}Translation: "${item.hi}"\n`;
     }).join('\n');
     const dateStr = new Date().toISOString().slice(0, 10);
-    const filename = `OrbitCaptions_Transcript_${dateStr}.txt`;
+    const filename = `OrbitAI-Captions_Transcript_${dateStr}.txt`;
 
     if (window.electronAPI?.saveFile) {
       const result = await window.electronAPI.saveFile(content, filename);
@@ -1359,7 +1359,7 @@ function App() {
 
         {/* Left: Brand */}
         <div className="flex items-center gap-2">
-          <span className={`text-xs font-bold text-transparent bg-clip-text bg-gradient-to-r ${theme.accentGradient} tracking-wider uppercase`}>OrbitCaptions</span>
+          <span className={`text-xs font-bold text-transparent bg-clip-text bg-gradient-to-r ${theme.accentGradient} tracking-wider uppercase`}>OrbitAI-Captions</span>
           <div className="flex items-center gap-1.5 ml-2">
             <span className={`w-2 h-2 rounded-full ${(isListening || isDemoMode) ? 'bg-emerald-500 animate-ping' : 'bg-slate-500'}`}></span>
             <span className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold mr-1">
@@ -1795,7 +1795,7 @@ function App() {
                       type="text"
                       value={tempDeepgramKeywords}
                       onChange={(e) => setTempDeepgramKeywords(e.target.value)}
-                      placeholder="e.g. OrbitCaptions, Deepgram, Zoom"
+                      placeholder="e.g. OrbitAI-Captions, Deepgram, Zoom"
                       className="bg-slate-900 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-500 w-full"
                     />
                   </div>
@@ -1804,7 +1804,7 @@ function App() {
                   <div className="col-span-2 flex items-center justify-between p-2 bg-slate-900/60 border border-white/5 rounded mt-1">
                     <div>
                       <p className="text-[10px] text-slate-300 font-semibold">Auto-Save Transcripts</p>
-                      <p className="text-[8px] text-slate-500">Saves transcript silently to Documents/OrbitCaptions when speech capture stops.</p>
+                      <p className="text-[8px] text-slate-500">Saves transcript silently to Documents/OrbitAI-Captions when speech capture stops.</p>
                     </div>
                     <input
                       type="checkbox"
