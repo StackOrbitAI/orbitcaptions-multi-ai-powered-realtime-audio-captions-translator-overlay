@@ -260,7 +260,10 @@ function App() {
 
     setIsSettingsOpen(true);
     if (window.electronAPI?.resizeWindow) {
-      window.electronAPI.resizeWindow(800, 480);
+      window.electronAPI.resizeWindow(800, 520);
+    }
+    if (window.electronAPI?.setAlwaysOnTop) {
+      window.electronAPI.setAlwaysOnTop(false);
     }
   };
 
@@ -268,6 +271,9 @@ function App() {
     setIsSettingsOpen(false);
     if (window.electronAPI?.resizeWindow) {
       window.electronAPI.resizeWindow(800, 180);
+    }
+    if (window.electronAPI?.setAlwaysOnTop) {
+      window.electronAPI.setAlwaysOnTop(isAlwaysOnTop);
     }
   };
 
@@ -779,7 +785,7 @@ function App() {
         ? deepgramKeywords.split(',').map(k => k.trim()).filter(Boolean).map(k => `&keywords=${encodeURIComponent(k)}`).join('')
         : '';
       const modelParam = deepgramModel || 'nova-3';
-      const wsUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&model=${modelParam}&interim_results=true&smart_format=true&punctuate=true&diarize=true&diarize_model=latest&endpointing=300&language=${sLang}${kwParams}`;
+      const wsUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&model=${modelParam}&interim_results=true&smart_format=true&punctuate=true&diarize=true&endpointing=300&language=${sLang}${kwParams}`;
       const socket = new WebSocket(wsUrl, ['token', key]);
       socketRef.current = socket;
 
@@ -913,6 +919,14 @@ function App() {
           return;
         }
 
+        // 1006 usually means Invalid API Key, Invalid Model, or Network Block
+        if (ev.code === 1006 && reconnectAttempts === 0) {
+           setError('Deepgram Error 1006: Connection rejected. Please check if your Deepgram API Key is correct in Settings!');
+           setIsListening(false);
+           cleanupResources();
+           return;
+        }
+
         // Unexpected closure (auto-reconnect with exponential backoff)
         const currentAttempts = reconnectAttempts;
         if (currentAttempts < 5) {
@@ -924,7 +938,7 @@ function App() {
             startDeepgramStream();
           }, delay);
         } else {
-          setError('Deepgram disconnected. Max reconnection attempts reached. Check internet.');
+          setError('Deepgram disconnected. Max reconnection attempts reached. Check internet or API Key.');
           setIsListening(false);
           cleanupResources();
         }
@@ -1707,7 +1721,7 @@ function App() {
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
-                    className={`text-xs font-bold uppercase tracking-wider pb-1 transition-all border-b-2 ${activeTab === tab.id ? `${theme.tabActive}` : 'text-slate-400 border-transparent hover:text-slate-200'}`}
+                    className={`text-[11px] px-3 py-1.5 rounded-t-md font-bold uppercase tracking-wider transition-all border-b-2 ${activeTab === tab.id ? `bg-white/10 ${theme.tabActive}` : 'text-slate-400 border-transparent hover:text-slate-200 hover:bg-white/5'}`}
                   >
                     {tab.label}
                   </button>
