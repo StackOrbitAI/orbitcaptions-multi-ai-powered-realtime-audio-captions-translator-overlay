@@ -47,3 +47,8 @@ body {
   animation: captionFadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* Fix native dropdown options showing white text on white background in Windows */
+option {
+  background-color: #0f172a; /* slate-900 */
+  color: #f8fafc; /* slate-50 */
+}

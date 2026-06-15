@@ -14,14 +14,10 @@ Featuring custom theme layouts, a glowing soundwave visualizer, Right-to-Left (R
 *   **Automatic Right-to-Left (RTL) Layout**: Dynamically detects RTL scripts (Arabic, Hebrew, Urdu) and applies mirroring, aligning paragraphs and layout loaders cleanly from right to left.
 *   **Flexible Source Input**: Instantly switch between capturing your **🎙️ Microphone** or capturing your **🔊 System Speakers** (Windows loopback capture) to transcribe audio from other participants, YouTube videos, or podcasts.
 
-### 🤖 2. Dynamic AI Translation Providers (LLMs & Custom)
+### 🤖 2. Dynamic Translation Providers
 Configure and swap translation engines directly from the settings panel:
 *   **Google Translate (Free & Unlimited)**: Client-side gateway translator. Defaults to work immediately out of the box with zero setup.
-*   **Google Gemini AI**: Choose from standard popular models (`gemini-2.5-flash`, `gemini-2.0-flash`, `gemini-2.0-pro-exp-02-05`, `gemini-1.5-flash`, `gemini-1.5-pro`) or select **Custom Model** to type any experimental Google Gemini model ID.
-*   **OpenAI GPT API**: Select popular GPTs (`gpt-4o-mini`, `gpt-4o`, `gpt-4-turbo`, `o1-mini`, `o3-mini`) or type a custom model. Fully overrides **Base URL** for compatibility with local LLMs (Ollama, LM Studio) or third-party host gateways (Groq, OpenRouter).
-*   **DeepSeek AI**: Predefined dropdown options (`deepseek-chat`, `deepseek-reasoner`) and custom model choices.
-*   **Custom OpenAI-Compatible Endpoints**: Complete customizable text boxes for custom URLs, API keys/passwords, and model tags.
-*   **Translate Final Sentence Only**: Checkbox toggle to skip interim results and query translation API only on final sentence delivery—optimizing token usage, billing, and latency.
+*   **Translate Final Sentence Only**: Checkbox toggle to skip interim results and query translation API only on final sentence delivery—optimizing latency.
 
 ### ⏱️ 3. Translation Real-Time Speed Controls
 *   **Delay Slider**: Customize real-time caption translation debounce from **100ms** (fastest, live updates) to **1500ms** (slower batch updates).
@@ -94,8 +90,8 @@ The compiled output, portable binaries, and installers will be saved in the `./d
 ---
 
 ## 🔒 Security & API Key Policies
-*   All keys (Deepgram, Gemini, OpenAI, DeepSeek, Google Cloud TTS) are stored safely inside the local desktop browser sandboxed `localStorage`.
-*   Credentials are sent directly to the respective AI provider endpoints and never pass through any third-party middle-man servers.
+*   All keys (Deepgram, Google Cloud TTS) are stored safely inside the local desktop browser sandboxed `localStorage`.
+*   Credentials are sent directly to the respective API provider endpoints and never pass through any third-party middle-man servers.
 
 ---
 
