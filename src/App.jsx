@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 
-// Gemini Live Audio model — supports system_instruction, no translation_config needed
-// gemini-2.5-flash-native-audio-latest is confirmed available on this API key
-const GEMINI_MODEL = 'gemini-2.5-flash-native-audio-latest';
+// Hardcoded Deepgram API Key for real-time speech capturing (STT)
+const DEEPGRAM_API_KEY = 'eab301b90ae1eb2fb73abce646c20d023b54e2d2';
 
 // Demo mode dialogues (English & Hindi)
 const DEMO_DIALOGUES = [
@@ -12,7 +11,7 @@ const DEMO_DIALOGUES = [
   { en: "You can drag it anywhere on the screen using the top handle.", hi: "आप शीर्ष हैंडल का उपयोग करके इसे स्क्रीन पर कहीं भी खींच सकते हैं।" },
   { en: "The background transparency and text size can be customized in real-time.", hi: "पृष्ठभूमि की पारदर्शिता और टेक्स्ट के आकार को वास्तविक समय में अनुकूलित किया जा सकता है।" },
   { en: "Try speaking now or let this demo show you how it works!", hi: "अभी बोलने का प्रयास करें या इस डेमो को देखने दें कि यह कैसे काम करता है!" },
-  { en: "Powered by Google Gemini Live Translate — the most accurate real-time translation.", hi: "गूगल जेमिनी लाइव ट्रांसलेट द्वारा संचालित — सबसे सटीक रीयल-टाइम अनुवाद।" },
+  { en: "Powered by Deepgram & Google Translate — accurate real-time captioning.", hi: "डीपग्राम और गूगल ट्रांसलेट द्वारा संचालित — सटीक रीयल-टाइम कैप्शनिंग।" },
   { en: "This is a game-changer for multilingual remote meetings.", hi: "यह बहुभाषी रिमोट बैठकों के लिए एक गेम-चेंजर है।" },
 ];
 
@@ -24,25 +23,75 @@ function App() {
   const [lastEnglishText, setLastEnglishText] = useState('');
   const [lastHindiText, setLastHindiText] = useState('');
   const [error, setError] = useState('');
+  const [isTranslating, setIsTranslating] = useState(false);
+
+  // Speaker Diarization States
+  const [activeSpeaker, setActiveSpeaker] = useState(null);
+  const [lastSpeaker, setLastSpeaker] = useState(null);
 
   // Customization States
   const [fontSize, setFontSize] = useState('medium');
   const [opacity, setOpacity] = useState(80);
   const [audioSource, setAudioSource] = useState('system');
   const [transcriptHistory, setTranscriptHistory] = useState([]);
-
-  // API and Settings States
-  const [apiKey, setApiKey] = useState(() => {
-    return localStorage.getItem('gemini_api_key') || '';
+  const [captionTheme, setCaptionTheme] = useState(() => {
+    return localStorage.getItem('caption_theme') || 'yellow';
   });
+
+  // Typography & Layout States
+  const [captionFont, setCaptionFont] = useState(() => localStorage.getItem('caption_font') || 'Inter');
+  const [tempCaptionFont, setTempCaptionFont] = useState(captionFont);
+
+  const [captionAlignment, setCaptionAlignment] = useState(() => localStorage.getItem('caption_alignment') || 'center');
+  const [tempCaptionAlignment, setTempCaptionAlignment] = useState(captionAlignment);
+
+  const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(() => localStorage.getItem('always_on_top') !== 'false');
+
+  const [deepgramKeywords, setDeepgramKeywords] = useState(() => localStorage.getItem('deepgram_keywords') || '');
+  const [tempDeepgramKeywords, setTempDeepgramKeywords] = useState(deepgramKeywords);
+
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState(() => localStorage.getItem('auto_save_enabled') !== 'false');
+  const [tempAutoSaveEnabled, setTempAutoSaveEnabled] = useState(autoSaveEnabled);
+
+  const [shouldAutoSave, setShouldAutoSave] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+
+  // Settings States
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [tempApiKey, setTempApiKey] = useState(apiKey);
   const [activeTab, setActiveTab] = useState('config');
   const [logsCopied, setLogsCopied] = useState(false);
   const [translationDirection, setTranslationDirection] = useState(() => {
     return localStorage.getItem('translation_direction') || 'en-hi';
   });
   const [tempTranslationDirection, setTempTranslationDirection] = useState(translationDirection);
+
+  // Reconnection Logic
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const reconnectTimeoutRef = useRef(null);
+
+  // Toast Helper
+  const showToast = (msg) => {
+    setToastMessage(msg);
+    setTimeout(() => setToastMessage(''), 4000);
+  };
+
+  // Sync window always-on-top state on mount
+  useEffect(() => {
+    if (window.electronAPI?.setAlwaysOnTop) {
+      window.electronAPI.setAlwaysOnTop(isAlwaysOnTop);
+    }
+  }, []);
+
+  const getFontFamilyStyle = (font) => {
+    switch (font) {
+      case 'Poppins': return "'Poppins', sans-serif";
+      case 'Outfit': return "'Outfit', sans-serif";
+      case 'Roboto': return "'Roboto', sans-serif";
+      case 'Mukta': return "'Mukta', sans-serif";
+      case 'Inter':
+      default: return "'Inter', sans-serif";
+    }
+  };
 
   // Refs for managing streaming resources
   const socketRef = useRef(null);
@@ -52,9 +101,20 @@ function App() {
   const demoIntervalRef = useRef(null);
   const demoIndexRef = useRef(0);
 
+  // Ref so closures always read the latest translationDirection
+  const translationDirectionRef = useRef(translationDirection);
+  useEffect(() => { translationDirectionRef.current = translationDirection; }, [translationDirection]);
+
+  // Translation via Free Google Translate API
+  const translateTimerRef   = useRef(null);  // debounce timer (silence-based)
+  const translateIntervalRef = useRef(null); // interval timer (continuous speech)
+  const lastTranslatedTextRef = useRef('');
+  const isTranslatingActiveRef = useRef(false); // prevent concurrent translation calls
+
   // Refs for rolling display
   const currentEnRef = useRef('');
   const currentHiRef = useRef('');
+  const currentSpeakerRef = useRef(null);
   const scrollContainerRef = useRef(null);
 
   // Auto-scroll captions to bottom
@@ -64,8 +124,79 @@ function App() {
     }
   }, [englishText, hindiText, lastEnglishText, lastHindiText]);
 
-  // Cleanup all active resources
+  // translates sourceText → targetLang via free web Google Translate API (client=gtx)
+  const doRestTranslate = async (sourceText, targetLang) => {
+    if (isTranslatingActiveRef.current) return;
+    if (!sourceText || sourceText.trim() === lastTranslatedTextRef.current) return;
+
+    isTranslatingActiveRef.current = true;
+    try {
+      const textToTranslate = sourceText.trim();
+      const sl = targetLang === 'hi' ? 'en' : 'hi';
+      const tl = targetLang;
+      console.log('[TRANSLATE →]', textToTranslate.substring(0, 60));
+
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sl}&tl=${tl}&dt=t&q=${encodeURIComponent(textToTranslate)}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.warn('[TRANSLATE] HTTP error:', res.status);
+        return;
+      }
+      const data = await res.json();
+      const translated = data?.[0]?.map(item => item[0]).join('') || '';
+      console.log('[TRANSLATE ←]', translated.substring(0, 60));
+
+      if (translated) {
+        lastTranslatedTextRef.current = textToTranslate;
+        if (targetLang === 'hi') {
+          currentHiRef.current = translated;
+          setHindiText(translated);
+        } else {
+          currentEnRef.current = translated;
+          setEnglishText(translated);
+        }
+        setIsTranslating(false);
+      }
+    } catch (e) {
+      console.warn('[TRANSLATE] error:', e.message);
+    } finally {
+      isTranslatingActiveRef.current = false;
+    }
+  };
+
+  // Schedule translation
+  const scheduleTranslation = (sourceText, targetLang) => {
+    if (translateTimerRef.current) clearTimeout(translateTimerRef.current);
+    translateTimerRef.current = setTimeout(() => {
+      doRestTranslate(sourceText, targetLang);
+    }, 250);
+
+    if (!translateIntervalRef.current) {
+      translateIntervalRef.current = setInterval(() => {
+        const dir = translationDirectionRef.current;
+        const src = dir === 'en-hi' ? currentEnRef.current
+                  : dir === 'hi-en' ? currentHiRef.current
+                  : '';
+        const tgt = dir === 'en-hi' ? 'hi' : 'en';
+        if (src && src.trim() !== lastTranslatedTextRef.current) {
+          doRestTranslate(src.trim(), tgt);
+        }
+      }, 800);
+    }
+  };
+
+  const stopTranslationTimers = () => {
+    if (translateTimerRef.current) { clearTimeout(translateTimerRef.current); translateTimerRef.current = null; }
+    if (translateIntervalRef.current) { clearInterval(translateIntervalRef.current); translateIntervalRef.current = null; }
+    isTranslatingActiveRef.current = false;
+  };
+
   const cleanupResources = () => {
+    stopTranslationTimers();
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
     if (processorRef.current) {
       try { processorRef.current.disconnect(); } catch (e) { /* ignore */ }
       processorRef.current = null;
@@ -89,26 +220,75 @@ function App() {
   };
 
   // Finalize current sentence into the rolling display
-  const finalizeCurrentSentence = () => {
+  const finalizeCurrentSentence = async () => {
+    const dir = translationDirectionRef.current;
     const en = currentEnRef.current.trim();
     const hi = currentHiRef.current.trim();
-    if (en || hi) {
-      setLastEnglishText(en);
-      setLastHindiText(hi);
-      setEnglishText('');
-      setHindiText('');
-      currentEnRef.current = '';
-      currentHiRef.current = '';
+    const spk = currentSpeakerRef.current;
 
-      if (en && hi) {
+    stopTranslationTimers();
+    lastTranslatedTextRef.current = '';
+    setIsTranslating(false);
+
+    setEnglishText('');
+    setHindiText('');
+    currentEnRef.current = '';
+    currentHiRef.current = '';
+    setActiveSpeaker(null);
+    currentSpeakerRef.current = null;
+
+    if (en || hi) {
+      let finalEn = en;
+      let finalHi = hi;
+
+      // If translation is missing when finalized, perform a final translate
+      if (dir === 'en-hi' && en && !hi) {
+        try {
+          console.log('[FINAL TRANSLATE →]', en);
+          const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=hi&dt=t&q=${encodeURIComponent(en)}`;
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            const translated = data?.[0]?.map(item => item[0]).join('') || '';
+            if (translated) {
+              finalHi = translated;
+              console.log('[FINAL TRANSLATE ←]', translated);
+            }
+          }
+        } catch (e) {
+          console.warn('[FINAL TRANSLATE] error:', e.message);
+        }
+      } else if (dir === 'hi-en' && hi && !en) {
+        try {
+          console.log('[FINAL TRANSLATE →]', hi);
+          const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=hi&tl=en&dt=t&q=${encodeURIComponent(hi)}`;
+          const res = await fetch(url);
+          if (res.ok) {
+            const data = await res.json();
+            const translated = data?.[0]?.map(item => item[0]).join('') || '';
+            if (translated) {
+              finalEn = translated;
+              console.log('[FINAL TRANSLATE ←]', translated);
+            }
+          }
+        } catch (e) {
+          console.warn('[FINAL TRANSLATE] error:', e.message);
+        }
+      }
+
+      setLastEnglishText(finalEn);
+      setLastHindiText(finalHi);
+      setLastSpeaker(spk);
+
+      if (finalEn || finalHi) {
         const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        setTranscriptHistory(prev => [...prev, { time: timestamp, en, hi }]);
+        setTranscriptHistory(prev => [...prev, { time: timestamp, en: finalEn, hi: finalHi, speaker: spk }]);
       }
     }
   };
 
-  // Start Gemini Live Translate stream
-  const startGeminiStream = async () => {
+  // Start Deepgram Live Translate stream
+  const startDeepgramStream = async () => {
     cleanupResources();
     setEnglishText('');
     setHindiText('');
@@ -118,13 +298,11 @@ function App() {
     setTranscriptHistory([]);
     currentEnRef.current = '';
     currentHiRef.current = '';
+    currentSpeakerRef.current = null;
 
-    let key = apiKey.trim();
-    if ((key.startsWith('"') && key.endsWith('"')) || (key.startsWith("'") && key.endsWith("'"))) {
-      key = key.slice(1, -1).trim();
-    }
+    const key = DEEPGRAM_API_KEY;
     if (!key) {
-      setError('Gemini API key missing. Open ⚙️ Settings and enter your key.');
+      setError('Deepgram API key configuration error.');
       return;
     }
 
@@ -161,73 +339,74 @@ function App() {
 
       streamRef.current = stream;
 
-      // 2. Create AudioContext at 16kHz (Gemini Live requires 16kHz PCM16 mono)
+      // 2. Create AudioContext at 16kHz
       const audioContext = new AudioContext({ sampleRate: 16000 });
       audioContextRef.current = audioContext;
       const source = audioContext.createMediaStreamSource(stream);
+
+      // Create noise reduction filter nodes
+      // Highpass filter (cuts low hum, e.g. AC, fans)
+      const highpass = audioContext.createBiquadFilter();
+      highpass.type = 'highpass';
+      highpass.frequency.value = 100; // cut below 100Hz
+
+      // Lowpass filter (cuts high hiss/static)
+      const lowpass = audioContext.createBiquadFilter();
+      lowpass.type = 'lowpass';
+      lowpass.frequency.value = 4000; // cut above 4000Hz
+
       const processor = audioContext.createScriptProcessor(1024, 1, 1);
       processorRef.current = processor;
 
-      // 3. Open Gemini Live WebSocket (v1beta — works with system_instruction)
-      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${key}`;
-      const socket = new WebSocket(wsUrl);
+      // 3. Open Deepgram Live WebSocket
+      const direction = translationDirectionRef.current;
+      const sourceLang = (direction === 'en-hi' || direction === 'en-en') ? 'en' : 'hi';
+
+      const kwParams = deepgramKeywords
+        ? deepgramKeywords.split(',').map(k => k.trim()).filter(Boolean).map(k => `&keywords=${encodeURIComponent(k)}`).join('')
+        : '';
+      const wsUrl = `wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=16000&channels=1&model=nova-3&interim_results=true&smart_format=true&punctuate=true&diarize=true&diarize_model=latest&endpointing=300&language=${sourceLang}${kwParams}`;
+      const socket = new WebSocket(wsUrl, ['token', key]);
       socketRef.current = socket;
 
-      // Track whether setup is complete before sending audio
-      let setupComplete = false;
-
       socket.onopen = () => {
-        console.log('Gemini Live WebSocket connected (v1beta).');
+        console.log('Connected to Deepgram.');
+        setIsListening(true);
+        setError('');
+        setReconnectAttempts(0); // reset reconnect count on success
 
-        // 4. Send CORRECT setup for gemini-2.5-flash-native-audio-latest
-        // Set up the system instruction and language codes dynamically based on the selected mode
-        let systemInstructionText = '';
-        let sourceLangCodes = ['en-US', 'en-IN'];
-        let targetLangCodes = ['hi-IN'];
+        // Start keepalive timer every 10 seconds
+        const keepAliveInterval = setInterval(() => {
+          if (socket.readyState === WebSocket.OPEN) {
+            socket.send(JSON.stringify({ type: 'KeepAlive' }));
+          }
+        }, 10000);
 
-        switch (translationDirection) {
-          case 'hi-en':
-            systemInstructionText = 'You are a real-time Hindi to English interpreter. The user will stream live audio in Hindi. Translate everything they say into English and speak the translation. Be natural, conversational, and direct. Do not add any introductory or explanatory text.';
-            sourceLangCodes = ['hi-IN'];
-            targetLangCodes = ['en-US'];
-            break;
-          case 'en-en':
-            systemInstructionText = 'You are a real-time English transcriber. The user will stream live audio in English. Transcribe everything they say exactly in English and speak the transcription. Do not translate. Be natural, direct, and accurate. Do not add any introductory or explanatory text.';
-            sourceLangCodes = ['en-US', 'en-IN'];
-            targetLangCodes = ['en-US'];
-            break;
-          case 'hi-hi':
-            systemInstructionText = 'You are a real-time Hindi transcriber. The user will stream live audio in Hindi. Transcribe everything they say exactly in Hindi and speak the transcription. Do not translate. Be natural, direct, and accurate. Do not add any introductory or explanatory text.';
-            sourceLangCodes = ['hi-IN'];
-            targetLangCodes = ['hi-IN'];
-            break;
-          default: // en-hi
-            systemInstructionText = 'You are a real-time English to Hindi interpreter. The user will stream live audio in English. Translate everything they say into Hindi and speak the translation. Be natural, conversational, and direct. Do not add any introductory or explanatory text.';
-            sourceLangCodes = ['en-US', 'en-IN'];
-            targetLangCodes = ['hi-IN'];
-        }
+        socketRef.current.keepAliveInterval = keepAliveInterval;
 
-        const setupMsg = {
-          setup: {
-            model: `models/${GEMINI_MODEL}`,
-            generation_config: {
-              response_modalities: ['AUDIO'],
-            },
-            system_instruction: {
-              parts: [{
-                text: systemInstructionText
-              }]
-            },
-            input_audio_transcription: {},
-            output_audio_transcription: {}
+        processor.onaudioprocess = (e) => {
+          if (socket.readyState === WebSocket.OPEN) {
+            const float32 = e.inputBuffer.getChannelData(0);
+            const int16 = new Int16Array(float32.length);
+            for (let i = 0; i < float32.length; i++) {
+              const s = Math.max(-1, Math.min(1, float32[i]));
+              int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+            }
+            socket.send(int16.buffer);
           }
         };
-        console.log('Sending Gemini setup:', JSON.stringify(setupMsg));
-        socket.send(JSON.stringify(setupMsg));
-        // Do NOT start audio yet — wait for setupComplete from server
+
+        const silentGain = audioContext.createGain();
+        silentGain.gain.value = 0;
+        
+        // Connect nodes in series for active hum/noise filtering
+        source.connect(highpass);
+        highpass.connect(lowpass);
+        lowpass.connect(processor);
+        processor.connect(silentGain);
+        silentGain.connect(audioContext.destination);
       };
 
-      // 5. Handle all incoming Gemini messages
       socket.onmessage = async (event) => {
         try {
           let textData = '';
@@ -237,112 +416,114 @@ function App() {
             textData = event.data;
           }
           const msg = JSON.parse(textData);
-          console.log('Gemini msg:', JSON.stringify(msg).substring(0, 400));
 
-          // --- Wait for setupComplete before streaming audio ---
-          if (msg?.setupComplete !== undefined && !setupComplete) {
-            setupComplete = true;
-            console.log('Gemini setup complete. Starting audio stream...');
-            setIsListening(true);
-            setError('');
+          const transcript = msg?.channel?.alternatives?.[0]?.transcript || '';
+          const isFinal = msg?.is_final ?? false;
+          const speechFinal = msg?.speech_final ?? false;
+          const words = msg?.channel?.alternatives?.[0]?.words || [];
 
-            // NOW start streaming PCM audio to Gemini
-            processor.onaudioprocess = (e) => {
-              if (socket.readyState === WebSocket.OPEN && setupComplete) {
-                const float32 = e.inputBuffer.getChannelData(0);
-                const int16 = new Int16Array(float32.length);
-                for (let i = 0; i < float32.length; i++) {
-                  const s = Math.max(-1, Math.min(1, float32[i]));
-                  int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-                }
-                const bytes = new Uint8Array(int16.buffer);
-                let binary = '';
-                bytes.forEach(b => binary += String.fromCharCode(b));
-                const base64 = btoa(binary);
-                socket.send(JSON.stringify({
-                  realtime_input: {
-                    media_chunks: [{ mime_type: 'audio/pcm;rate=16000', data: base64 }]
-                  }
-                }));
-              }
-            };
-
-            const silentGain = audioContext.createGain();
-            silentGain.gain.value = 0;
-            source.connect(processor);
-            processor.connect(silentGain);
-            silentGain.connect(audioContext.destination);
-            return;
+          // Capture active speaker diarization tags
+          if (words.length > 0 && words[0].speaker !== undefined) {
+            const spk = words[0].speaker;
+            setActiveSpeaker(spk);
+            currentSpeakerRef.current = spk;
           }
 
-          // Handle real-time audio transcriptions from Gemini Live API (accumulate word-by-word)
-          const inputText = msg?.serverContent?.inputTranscription?.text || msg?.inputTranscription?.text || '';
-          const outputText = msg?.serverContent?.outputTranscription?.text || msg?.outputTranscription?.text || '';
+          const direction = translationDirectionRef.current;
 
-          if (translationDirection === 'hi-en') {
-            // Hindi Audio -> English Captions
-            // Input (source) is Hindi (goes to bottom). Output (target) is English (goes to top).
-            if (inputText) {
-              currentHiRef.current = currentHiRef.current + inputText;
-              setHindiText(currentHiRef.current.trim());
-            }
-            if (outputText) {
-              currentEnRef.current = currentEnRef.current + outputText;
-              setEnglishText(currentEnRef.current.trim());
-            }
-          } else {
-            // en-hi, en-en, hi-hi
-            // Input (source) maps to top for English, bottom for Hindi
-            if (inputText) {
-              if (translationDirection.startsWith('hi')) {
-                currentHiRef.current = currentHiRef.current + inputText;
-                setHindiText(currentHiRef.current.trim());
+          const appendChunk = (prev, chunk) => {
+            if (!prev) return chunk;
+            if (prev.endsWith(' ') || chunk.startsWith(' ')) return prev + chunk;
+            return prev + ' ' + chunk;
+          };
+
+          if (transcript) {
+            if (direction === 'en-hi') {
+              const activeText = appendChunk(currentEnRef.current, transcript);
+              if (!isFinal) {
+                setEnglishText(activeText);
+                setIsTranslating(true);
+                scheduleTranslation(activeText, 'hi');
               } else {
-                currentEnRef.current = currentEnRef.current + inputText;
-                setEnglishText(currentEnRef.current.trim());
+                currentEnRef.current = activeText;
+                setEnglishText(activeText);
+                scheduleTranslation(activeText, 'hi');
               }
-            }
-            // Output (target) maps to bottom for Hindi, top for English
-            if (outputText) {
-              if (translationDirection.endsWith('hi')) {
-                currentHiRef.current = currentHiRef.current + outputText;
-                setHindiText(currentHiRef.current.trim());
+            } else if (direction === 'hi-en') {
+              const activeText = appendChunk(currentHiRef.current, transcript);
+              if (!isFinal) {
+                setHindiText(activeText);
+                setIsTranslating(true);
+                scheduleTranslation(activeText, 'en');
               } else {
-                currentEnRef.current = currentEnRef.current + outputText;
-                setEnglishText(currentEnRef.current.trim());
+                currentHiRef.current = activeText;
+                setHindiText(activeText);
+                scheduleTranslation(activeText, 'en');
+              }
+            } else if (direction === 'hi-hi') {
+              const activeText = appendChunk(currentHiRef.current, transcript);
+              if (!isFinal) {
+                setHindiText(activeText);
+              } else {
+                currentHiRef.current = activeText;
+                setHindiText(activeText);
+              }
+            } else {
+              const activeText = appendChunk(currentEnRef.current, transcript);
+              if (!isFinal) {
+                setEnglishText(activeText);
+              } else {
+                currentEnRef.current = activeText;
+                setEnglishText(activeText);
               }
             }
           }
 
-          // Turn complete → push to history
-          if (msg?.serverContent?.turnComplete === true) {
+          if (speechFinal) {
+            console.log('[SPEECH FINAL] finalizing current sentence');
+            setIsTranslating(false);
             finalizeCurrentSentence();
           }
-
         } catch (e) {
-          console.error('Failed to parse Gemini message:', e);
+          console.error('Failed to parse Deepgram message:', e);
         }
       };
 
       socket.onerror = (err) => {
-        console.error('Gemini WebSocket error:', err);
-        setError('Gemini connection error. Check your API key in ⚙️ Settings.');
+        console.error('Deepgram WebSocket error:', err);
+        setError('Deepgram connection error. Check your connection.');
         setIsListening(false);
         cleanupResources();
       };
 
       socket.onclose = (ev) => {
-        console.log('Gemini WebSocket closed:', ev.code, ev.reason);
-        setIsListening(false);
-        // Show error for unexpected closes (not user-initiated)
-        if (ev.code !== 1000 && ev.code !== 1001) {
-          const reason = ev.reason || `Code ${ev.code}`;
-          setError(`Gemini disconnected: ${reason}. Check API key in ⚙️ Settings.`);
+        console.log('Deepgram WebSocket closed:', ev.code, ev.reason);
+        
+        // Normal closure (triggered by clicking Stop)
+        if (ev.code === 1000 || ev.code === 1001) {
+          setIsListening(false);
+          return;
+        }
+
+        // Unexpected closure (auto-reconnect with exponential backoff)
+        const currentAttempts = reconnectAttempts;
+        if (currentAttempts < 5) {
+          setError(`Deepgram disconnected. Reconnecting (Attempt ${currentAttempts + 1}/5)...`);
+          setReconnectAttempts(prev => prev + 1);
+
+          const delay = Math.min(1500 * Math.pow(2, currentAttempts), 12000);
+          reconnectTimeoutRef.current = setTimeout(() => {
+            startDeepgramStream();
+          }, delay);
+        } else {
+          setError('Deepgram disconnected. Max reconnection attempts reached. Check internet.');
+          setIsListening(false);
+          cleanupResources();
         }
       };
 
     } catch (err) {
-      console.error('Failed to start Gemini stream:', err);
+      console.error('Failed to start Deepgram stream:', err);
       if (err.name === 'NotAllowedError') {
         setError(audioSource === 'system'
           ? 'Screen recording permission denied.'
@@ -355,16 +536,51 @@ function App() {
     }
   };
 
-  const stopStream = () => {
+  const stopStream = async () => {
     setIsListening(false);
-    finalizeCurrentSentence();
+    setReconnectAttempts(0);
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+      reconnectTimeoutRef.current = null;
+    }
+    await finalizeCurrentSentence();
     cleanupResources();
+    if (autoSaveEnabled) {
+      setShouldAutoSave(true);
+    }
   };
+
+  useEffect(() => {
+    if (shouldAutoSave && transcriptHistory.length > 0) {
+      const performSilentSave = async () => {
+        const content = transcriptHistory.map(item => {
+          const spkLabel = item.speaker !== null && item.speaker !== undefined ? `[Speaker ${item.speaker}] ` : '';
+          return `[${item.time}]\n${spkLabel}English: "${item.en}"\n${spkLabel}Hindi:   "${item.hi}"\n`;
+        }).join('\n');
+        const dateStr = new Date().toISOString().slice(0, 10);
+        const timeStr = new Date().toTimeString().slice(0, 8).replace(/:/g, '-');
+        const filename = `OrbitCaptions_AutoSave_${dateStr}_${timeStr}.txt`;
+        
+        if (window.electronAPI?.saveFileSilent) {
+          const result = await window.electronAPI.saveFileSilent(content, filename);
+          if (result?.success) {
+            showToast(`Transcript auto-saved to Documents/OrbitCaptions`);
+          } else {
+            console.error("Auto-save failed:", result?.error);
+          }
+        }
+        setShouldAutoSave(false);
+      };
+      performSilentSave();
+    } else if (shouldAutoSave) {
+      setShouldAutoSave(false);
+    }
+  }, [shouldAutoSave, transcriptHistory]);
 
   const toggleListening = () => {
     if (isDemoMode) setIsDemoMode(false);
     if (isListening) stopStream();
-    else startGeminiStream();
+    else startDeepgramStream();
   };
 
   // Demo Mode
@@ -382,16 +598,19 @@ function App() {
           const prev = DEMO_DIALOGUES[prevIndex];
           setLastEnglishText(prev.en);
           setLastHindiText(prev.hi);
+          setLastSpeaker(currentIndex % 2);
         } else {
           setLastEnglishText('');
           setLastHindiText('');
+          setLastSpeaker(null);
         }
 
         setEnglishText(cur.en);
         setHindiText(cur.hi);
+        setActiveSpeaker(currentIndex % 2);
 
         const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        setTranscriptHistory(prev => [...prev, { time: timestamp, en: cur.en, hi: cur.hi }]);
+        setTranscriptHistory(prev => [...prev, { time: timestamp, en: cur.en, hi: cur.hi, speaker: currentIndex % 2 }]);
         demoIndexRef.current = (currentIndex + 1) % DEMO_DIALOGUES.length;
       };
 
@@ -404,6 +623,8 @@ function App() {
         setHindiText('');
         setLastEnglishText('');
         setLastHindiText('');
+        setActiveSpeaker(null);
+        setLastSpeaker(null);
       }
     }
     return () => { if (demoIntervalRef.current) clearInterval(demoIntervalRef.current); };
@@ -425,9 +646,10 @@ function App() {
       setTimeout(() => setError(''), 4000);
       return;
     }
-    const content = transcriptHistory.map(item =>
-      `[${item.time}]\nEnglish: "${item.en}"\nHindi:   "${item.hi}"\n`
-    ).join('\n');
+    const content = transcriptHistory.map(item => {
+      const spkLabel = item.speaker !== null && item.speaker !== undefined ? `[Speaker ${item.speaker}] ` : '';
+      return `[${item.time}]\n${spkLabel}English: "${item.en}"\n${spkLabel}Hindi:   "${item.hi}"\n`;
+    }).join('\n');
     const dateStr = new Date().toISOString().slice(0, 10);
     const filename = `OrbitCaptions_Transcript_${dateStr}.txt`;
 
@@ -452,13 +674,12 @@ function App() {
     return JSON.stringify({
       timestamp: new Date().toISOString(),
       error: error || 'None',
-      isListening, isDemoMode, audioSource,
-      apiKeyConfigured: apiKey ? `${apiKey.substring(0, 8)}...` : 'None',
+      isListening, isDemoMode, audioSource, captionTheme,
       userAgent: navigator.userAgent,
       activeEnglish: englishText || 'None',
       activeHindi: hindiText || 'None',
       historyCount: transcriptHistory.length,
-      history: transcriptHistory.map(i => `[${i.time}] EN: "${i.en}" | HI: "${i.hi}"`).join('\n')
+      history: transcriptHistory.map(i => `[${i.time}] Spk ${i.speaker}: EN: "${i.en}" | HI: "${i.hi}"`).join('\n')
     }, null, 2);
   };
 
@@ -513,6 +734,48 @@ function App() {
   };
   const textClasses = getFontSizeClasses();
 
+  // Custom Caption Theme Classes
+  const getThemeClasses = () => {
+    switch (captionTheme) {
+      case 'white':
+        return {
+          activeHi: 'text-transparent bg-clip-text bg-gradient-to-r from-white via-slate-100 to-slate-200 drop-shadow-[0_2px_8px_rgba(255,255,255,0.2)]',
+          finalHi: 'text-slate-300'
+        };
+      case 'cyan':
+        return {
+          activeHi: 'text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-sky-200 to-cyan-400 drop-shadow-[0_2px_8px_rgba(34,211,238,0.3)]',
+          finalHi: 'text-cyan-300/80'
+        };
+      default: // yellow
+        return {
+          activeHi: 'text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-400 drop-shadow-[0_2px_8px_rgba(251,191,36,0.3)]',
+          finalHi: 'text-yellow-400/80'
+        };
+    }
+  };
+  const themeClasses = getThemeClasses();
+
+  const showEnglish = translationDirection === 'hi-en' || translationDirection === 'en-en';
+  const showHindi = translationDirection === 'en-hi' || translationDirection === 'hi-hi';
+
+  // Render Speaker Badge
+  const renderSpeakerTag = (spkId) => {
+    if (spkId === null || spkId === undefined) return null;
+    const colors = [
+      'text-rose-400 bg-rose-500/10 border-rose-500/20',
+      'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
+      'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+      'text-violet-400 bg-violet-500/10 border-violet-500/20'
+    ];
+    const colorClass = colors[spkId % colors.length];
+    return (
+      <span className={`text-[9px] font-extrabold uppercase tracking-widest px-1.5 py-0.5 rounded border mr-2 shrink-0 ${colorClass}`}>
+        🎙️ Spk {spkId}
+      </span>
+    );
+  };
+
   return (
     <div
       className="flex flex-col h-full w-full rounded-2xl border border-white/10 overflow-hidden text-white shadow-2xl transition-all duration-300"
@@ -527,11 +790,11 @@ function App() {
           <div className="flex items-center gap-1.5 ml-2">
             <span className={`w-2 h-2 rounded-full ${(isListening || isDemoMode) ? 'bg-emerald-500 animate-ping' : 'bg-slate-500'}`}></span>
             <span className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">
-              {isListening ? (audioSource === 'system' ? 'Gemini Live' : 'Mic Live') : isDemoMode ? 'Demo' : 'Offline'}
+              {isListening ? (audioSource === 'system' ? 'Deepgram Live' : 'Mic Live') : isDemoMode ? 'Demo' : 'Offline'}
             </span>
           </div>
-          {/* Gemini badge */}
-          <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 uppercase tracking-wider ml-1">✨ Gemini</span>
+          {/* Deepgram badge */}
+          <span className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 uppercase tracking-wider ml-1">✨ Deepgram</span>
         </div>
 
         {/* Right: Controls */}
@@ -603,6 +866,24 @@ function App() {
             </button>
           </div>
 
+          {/* Always on Top Pin Toggle */}
+          <button
+            onClick={() => {
+              const nextState = !isAlwaysOnTop;
+              setIsAlwaysOnTop(nextState);
+              localStorage.setItem('always_on_top', String(nextState));
+              if (window.electronAPI?.setAlwaysOnTop) {
+                window.electronAPI.setAlwaysOnTop(nextState);
+              }
+            }}
+            className={`p-1 hover:bg-white/5 rounded-md ml-1 transition-colors ${isAlwaysOnTop ? 'text-indigo-400' : 'text-slate-400 hover:text-white'}`}
+            title={isAlwaysOnTop ? "Pin: Always on Top (Active)" : "Unpin: Always on Top (Inactive)"}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill={isAlwaysOnTop ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.89A.5.5 0 0 0 6.36 14h11.28a.5.5 0 0 0 .25-.56l-1.78-.89a2 2 0 0 1-1.11-1.79V4H9v6.76zM15 4h-6M12 4v4"></path>
+            </svg>
+          </button>
+
           {/* Settings */}
           <button onClick={() => setIsSettingsOpen(true)} className="text-slate-400 hover:text-white transition-colors p-1 hover:bg-white/5 rounded-md ml-1" title="Settings">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
@@ -621,7 +902,7 @@ function App() {
           <div className="absolute inset-0 bg-radial-gradient from-indigo-500/5 via-transparent to-transparent pointer-events-none animate-pulse"></div>
         )}
 
-        {/* Error — small dismissible toast pinned to top of captions, with copy button */}
+        {/* Error */}
         {error && (
           <div className="flex items-start gap-2 bg-red-950/70 border border-red-500/30 text-red-200 text-[10px] py-1.5 px-2.5 rounded-lg font-medium mb-2 shrink-0">
             <span className="shrink-0 mt-0.5">⚠️</span>
@@ -664,41 +945,65 @@ function App() {
               </div>
               <span className="text-xs uppercase tracking-widest font-bold">
                 {isListening
-                  ? (audioSource === 'system' ? 'Gemini listening to speakers...' : 'Gemini listening to mic...')
+                  ? (audioSource === 'system' ? 'Deepgram listening to speakers...' : 'Deepgram listening to mic...')
                   : isDemoMode ? 'Running demo...'
-                  : !apiKey ? "⚠️ Enter Gemini API key in ⚙️ Settings first"
                   : "Ready — click 'Speech' or 'Demo'"}
               </span>
             </div>
           )}
 
           {/* Rolling: Last finalized (dimmed top) */}
-          {lastEnglishText && (
-            <div className="flex flex-col gap-1 border-l-2 border-slate-500/20 pl-3 py-0.5 opacity-60 scale-[0.98] origin-left transition-all duration-300 shrink-0">
-              <div className={`${textClasses.finalEn} tracking-wide italic drop-shadow-sm`} style={{ fontFamily: "'Inter', sans-serif" }}>
-                "{lastEnglishText}"
+          {((showEnglish && lastEnglishText) || (showHindi && lastHindiText)) && (
+            <div className="flex items-start gap-1 border-l-2 border-slate-500/20 pl-3 py-0.5 opacity-60 scale-[0.98] origin-left transition-all duration-300 shrink-0 animate-caption-in">
+              {renderSpeakerTag(lastSpeaker)}
+              <div className="flex-grow flex flex-col gap-1" style={{ textAlign: captionAlignment }}>
+                {showEnglish && lastEnglishText && (
+                  <div className={`${textClasses.finalEn} tracking-wide italic drop-shadow-sm`} style={{ fontFamily: getFontFamilyStyle(captionFont) }}>
+                    "{lastEnglishText}"
+                  </div>
+                )}
+                {showHindi && lastHindiText && (
+                  <div className={`${textClasses.finalHi} leading-relaxed ${themeClasses.finalHi}`} style={{ fontFamily: getFontFamilyStyle(captionFont) }}>
+                    {lastHindiText}
+                  </div>
+                )}
               </div>
-              {lastHindiText && (
-                <div className={`${textClasses.finalHi} leading-relaxed`} style={{ fontFamily: "'Mukta', sans-serif" }}>
-                  {lastHindiText}
-                </div>
-              )}
             </div>
           )}
 
           {/* Rolling: Active current (bright bottom) */}
-          {(englishText || hindiText) && (
-            <div className="flex flex-col gap-1 border-l-2 border-indigo-400 pl-3 py-0.5 transition-all duration-300 shrink-0">
-              {englishText && (
-                <div className={`${textClasses.activeEn} tracking-wide italic drop-shadow-md`} style={{ fontFamily: "'Inter', sans-serif" }}>
-                  "{englishText}"
-                </div>
-              )}
-              {hindiText && (
-                <div className={`${textClasses.activeHi} leading-relaxed text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 via-amber-200 to-yellow-400 drop-shadow-[0_2px_8px_rgba(251,191,36,0.3)]`} style={{ fontFamily: "'Mukta', sans-serif" }}>
-                  {hindiText}
-                </div>
-              )}
+          {((showEnglish && englishText) || (showHindi && hindiText) || isTranslating) && (
+            <div className="flex items-start gap-1 border-l-2 border-indigo-400 pl-3 py-0.5 transition-all duration-300 shrink-0 animate-caption-in">
+              {renderSpeakerTag(activeSpeaker)}
+              <div className="flex-grow flex flex-col gap-1" style={{ textAlign: captionAlignment }}>
+                {showEnglish && englishText && (
+                  <div className={`${textClasses.activeEn} tracking-wide italic drop-shadow-md`} style={{ fontFamily: getFontFamilyStyle(captionFont) }}>
+                    "{englishText}"
+                  </div>
+                )}
+                {showHindi && (
+                  hindiText ? (
+                    <div className={`${textClasses.activeHi} leading-relaxed ${themeClasses.activeHi}`} style={{ fontFamily: getFontFamilyStyle(captionFont) }}>
+                      {hindiText}
+                    </div>
+                  ) : isTranslating && (translationDirection === 'en-hi') && (
+                    <div className="flex items-center gap-1.5" style={{ fontFamily: getFontFamilyStyle(captionFont), justifyContent: captionAlignment === 'center' ? 'center' : captionAlignment === 'right' ? 'flex-end' : 'flex-start' }}>
+                      <span className="text-yellow-400/50 text-[11px] font-semibold italic tracking-wide">अनुवाद</span>
+                      <span className="w-1 h-1 bg-yellow-400/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                      <span className="w-1 h-1 bg-yellow-400/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                      <span className="w-1 h-1 bg-yellow-400/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                    </div>
+                  )
+                )}
+                {showEnglish && !englishText && isTranslating && (translationDirection === 'hi-en') && (
+                  <div className="flex items-center gap-1.5" style={{ fontFamily: getFontFamilyStyle(captionFont), justifyContent: captionAlignment === 'center' ? 'center' : captionAlignment === 'right' ? 'flex-end' : 'flex-start' }}>
+                    <span className="text-indigo-400/50 text-[11px] font-semibold italic tracking-wide">Translating</span>
+                    <span className="w-1 h-1 bg-indigo-400/60 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                    <span className="w-1 h-1 bg-indigo-400/60 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                    <span className="w-1 h-1 bg-indigo-400/60 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -718,14 +1023,14 @@ function App() {
               <div className="flex gap-3">
                 <button onClick={() => setActiveTab('config')}
                   className={`text-xs font-bold uppercase tracking-wider pb-1 transition-all border-b-2 ${activeTab === 'config' ? 'text-indigo-300 border-indigo-500' : 'text-slate-400 border-transparent hover:text-slate-200'}`}>
-                  ⚙️ API Key
+                  ⚙️ Settings
                 </button>
                 <button onClick={() => setActiveTab('logs')}
                   className={`text-xs font-bold uppercase tracking-wider pb-1 transition-all border-b-2 ${activeTab === 'logs' ? 'text-indigo-300 border-indigo-500' : 'text-slate-400 border-transparent hover:text-slate-200'}`}>
                   📋 Session Logs
                 </button>
               </div>
-              <button onClick={() => { setTempApiKey(apiKey); setIsSettingsOpen(false); }} className="text-slate-400 hover:text-white transition-colors">
+              <button onClick={() => { setIsSettingsOpen(false); }} className="text-slate-400 hover:text-white transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
               </button>
             </div>
@@ -733,27 +1038,93 @@ function App() {
             {/* Body */}
             <div className="flex-grow overflow-y-auto pr-1">
               {activeTab === 'config' ? (
-                <div className="flex flex-col gap-2 py-1">
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Google Gemini API Key</label>
-                  <input type="password" value={tempApiKey} onChange={(e) => setTempApiKey(e.target.value)}
-                    placeholder="Paste your Gemini API key here..."
-                    className="bg-slate-900 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-full font-mono" />
-                  <span className="text-[9px] text-slate-500">
-                    Get a free API key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-indigo-400 underline hover:text-indigo-300 no-drag">aistudio.google.com/apikey</a>
-                  </span>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-2 py-1 text-left">
+                  {/* Language Mode */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Language Mode</label>
+                    <select value={tempTranslationDirection} onChange={(e) => setTempTranslationDirection(e.target.value)}
+                      className="bg-slate-900 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-500 w-full cursor-pointer">
+                      <option value="en-hi">EN ➔ HI</option>
+                      <option value="hi-en">HI ➔ EN</option>
+                      <option value="en-en">EN ➔ EN</option>
+                      <option value="hi-hi">HI ➔ HI</option>
+                    </select>
+                  </div>
 
-                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mt-1.5">Language Mode & Translation</label>
-                  <select value={tempTranslationDirection} onChange={(e) => setTempTranslationDirection(e.target.value)}
-                    className="bg-slate-900 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-500 w-full cursor-pointer">
-                    <option value="en-hi">English Audio ➔ Hindi Captions</option>
-                    <option value="hi-en">Hindi Audio ➔ English Captions</option>
-                    <option value="en-en">English Audio ➔ English Captions (No translation)</option>
-                    <option value="hi-hi">Hindi Audio ➔ Hindi Captions (No translation)</option>
-                  </select>
+                  {/* Font Family */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Font Family</label>
+                    <select value={tempCaptionFont} onChange={(e) => setTempCaptionFont(e.target.value)}
+                      className="bg-slate-900 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-500 w-full cursor-pointer">
+                      <option value="Inter">Inter</option>
+                      <option value="Poppins">Poppins</option>
+                      <option value="Outfit">Outfit</option>
+                      <option value="Roboto">Roboto</option>
+                      <option value="Mukta">Mukta</option>
+                    </select>
+                  </div>
 
-                  <div className="mt-1.5 p-2 bg-blue-950/40 border border-blue-500/20 rounded-lg">
-                    <p className="text-[9px] text-blue-300 font-semibold">✨ Powered by Gemini Live ASR & NMT</p>
-                    <p className="text-[8px] text-slate-400 mt-0.5">Supports high-fidelity real-time transcription and direct context-aware translation.</p>
+                  {/* Theme */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Caption Theme</label>
+                    <div className="flex gap-1">
+                      {['yellow', 'white', 'cyan'].map((t) => (
+                        <button
+                          key={t}
+                          onClick={() => {
+                            localStorage.setItem('caption_theme', t);
+                            setCaptionTheme(t);
+                          }}
+                          className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border transition-all ${captionTheme === t ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-900 text-slate-400 border-white/5 hover:bg-slate-800'}`}
+                          type="button"
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Alignment */}
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Alignment</label>
+                    <div className="flex gap-1">
+                      {['left', 'center', 'right'].map((align) => (
+                        <button
+                          key={align}
+                          onClick={() => setTempCaptionAlignment(align)}
+                          className={`text-[9px] font-bold px-2 py-0.5 rounded uppercase tracking-wider border transition-all ${tempCaptionAlignment === align ? 'bg-indigo-600 text-white border-transparent' : 'bg-slate-900 text-slate-400 border-white/5 hover:bg-slate-800'}`}
+                          type="button"
+                        >
+                          {align}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Keyword Boosting */}
+                  <div className="col-span-2 flex flex-col gap-1">
+                    <label className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Keyword Boosting (Comma-separated)</label>
+                    <input
+                      type="text"
+                      value={tempDeepgramKeywords}
+                      onChange={(e) => setTempDeepgramKeywords(e.target.value)}
+                      placeholder="e.g. OrbitCaptions, Deepgram, Zoom"
+                      className="bg-slate-900 border border-white/10 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-500 w-full"
+                    />
+                  </div>
+
+                  {/* Auto Save Toggle */}
+                  <div className="col-span-2 flex items-center justify-between p-2 bg-slate-900/60 border border-white/5 rounded mt-1">
+                    <div>
+                      <p className="text-[10px] text-slate-300 font-semibold">Auto-Save Transcripts</p>
+                      <p className="text-[8px] text-slate-500">Saves transcript silently to Documents/OrbitCaptions when capture stops.</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={tempAutoSaveEnabled}
+                      onChange={(e) => setTempAutoSaveEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded border-white/10 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-950 bg-slate-900 cursor-pointer"
+                    />
                   </div>
                 </div>
               ) : (
@@ -766,7 +1137,7 @@ function App() {
                     </button>
                   </div>
                   <textarea readOnly value={getLogText()}
-                    className="bg-slate-900 border border-white/10 rounded-lg p-2 text-[10px] text-slate-300 font-mono focus:outline-none w-full h-[75px] resize-none overflow-y-auto" />
+                    className="bg-slate-900 border border-white/10 rounded-lg p-2 text-[10px] text-slate-300 font-mono focus:outline-none w-full h-[120px] resize-none overflow-y-auto" />
                 </div>
               )}
             </div>
@@ -775,32 +1146,48 @@ function App() {
           {activeTab === 'config' && (
             <div className="flex justify-end gap-2 border-t border-white/10 pt-2.5">
               <button onClick={() => { 
-                setTempApiKey(apiKey); 
                 setTempTranslationDirection(translationDirection);
+                setTempCaptionFont(captionFont);
+                setTempCaptionAlignment(captionAlignment);
+                setTempDeepgramKeywords(deepgramKeywords);
+                setTempAutoSaveEnabled(autoSaveEnabled);
                 setIsSettingsOpen(false); 
               }}
                 className="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 hover:bg-slate-800 text-slate-300 border border-white/5 transition-all">
                 Cancel
               </button>
               <button onClick={() => {
-                let cleanedKey = tempApiKey.trim();
-                if ((cleanedKey.startsWith('"') && cleanedKey.endsWith('"')) || (cleanedKey.startsWith("'") && cleanedKey.endsWith("'"))) {
-                  cleanedKey = cleanedKey.slice(1, -1).trim();
-                }
-                localStorage.setItem('gemini_api_key', cleanedKey);
-                setApiKey(cleanedKey);
-                setTempApiKey(cleanedKey);
-
                 localStorage.setItem('translation_direction', tempTranslationDirection);
                 setTranslationDirection(tempTranslationDirection);
 
+                localStorage.setItem('caption_font', tempCaptionFont);
+                setCaptionFont(tempCaptionFont);
+
+                localStorage.setItem('caption_alignment', tempCaptionAlignment);
+                setCaptionAlignment(tempCaptionAlignment);
+
+                localStorage.setItem('deepgram_keywords', tempDeepgramKeywords);
+                setDeepgramKeywords(tempDeepgramKeywords);
+
+                localStorage.setItem('auto_save_enabled', String(tempAutoSaveEnabled));
+                setAutoSaveEnabled(tempAutoSaveEnabled);
+
                 setIsSettingsOpen(false);
                 setError('');
+                showToast("Configuration saved successfully!");
               }} className="px-4 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md transition-all">
                 Save
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3.5 py-1.5 bg-slate-900/95 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold rounded-lg shadow-2xl flex items-center gap-1.5 backdrop-blur-md z-[100] animate-caption-in">
+          <span className="text-emerald-400">✓</span>
+          {toastMessage}
         </div>
       )}
     </div>

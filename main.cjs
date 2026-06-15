@@ -103,6 +103,34 @@ ipcMain.handle('save-file', async (event, { content, filename }) => {
   }
 });
 
+ipcMain.handle('save-file-silent', async (event, { content, filename }) => {
+  try {
+    const docsPath = app.getPath('documents');
+    const orbitCaptionsDir = path.join(docsPath, 'OrbitCaptions');
+    if (!fs.existsSync(orbitCaptionsDir)) {
+      fs.mkdirSync(orbitCaptionsDir, { recursive: true });
+    }
+    const fullPath = path.join(orbitCaptionsDir, filename);
+    fs.writeFileSync(fullPath, content, 'utf-8');
+    return { success: true, filePath: fullPath };
+  } catch (e) {
+    console.error("IPC save-file-silent error:", e);
+    return { success: false, error: e.message };
+  }
+});
+
+ipcMain.on('set-always-on-top', (event, flag) => {
+  try {
+    const webContents = event.sender;
+    const win = BrowserWindow.fromWebContents(webContents);
+    if (win) {
+      win.setAlwaysOnTop(flag, flag ? 'screen-saver' : 'normal');
+    }
+  } catch (e) {
+    console.error("IPC set-always-on-top error:", e);
+  }
+});
+
 ipcMain.handle('copy-to-clipboard', async (event, text) => {
   try {
     clipboard.writeText(text);
@@ -112,3 +140,4 @@ ipcMain.handle('copy-to-clipboard', async (event, text) => {
     return { success: false, error: e.message };
   }
 });
+
